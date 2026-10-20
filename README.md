@@ -1,7 +1,7 @@
 # SwitchSplat: Learning Discrete Object States from Casually Captured Scenes
 [![Webpage](https://img.shields.io/badge/Webpage-1F6FEB?style=for-the-badge&logo=googlechrome&logoColor=white)](https://switchsplat.github.io)
 [![arXiv](https://img.shields.io/badge/arXiv-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2610.24812)
-[![Viewer](https://img.shields.io/badge/Interactive%20Viewer-6D28D9?style=for-the-badge&logo=webgpu&logoColor=white)](https://switchsplat.github.io/viewer/)
+[![Viewer](https://img.shields.io/badge/Interactive%20Viewer-1F6F4A?style=for-the-badge&logo=webgpu&logoColor=white)](https://switchsplat.github.io/viewer/)
 
 [Yizheng Xie](https://xieyizheng.com)\*,
 [Yalda Foroutan](https://youlenda.github.io)\*,
