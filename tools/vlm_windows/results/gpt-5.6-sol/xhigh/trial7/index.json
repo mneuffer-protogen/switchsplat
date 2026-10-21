@@ -1,0 +1,242 @@
+{
+  "balcony": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 5,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "e498dd91823cfe6d16f3a3de65b0d0aa8b302bf6a66eb470bada57603caad6c2",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "36e01e9f2fdc0f6813e9859a19a39f30143797e2966b2e3bc2b8d9be9ee986e1",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 11008,
+      "input_tokens": 47870,
+      "output_tokens": 5013,
+      "reasoning_output_tokens": 4142
+    },
+    "command_executions": [],
+    "run_name": "balcony_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/balcony/raw_observation.json"
+  },
+  "chair": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 3,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "792d8f307ff44b01a6ee83548aedb473eb2406f9993c059edfdd50aca3a6f2f8",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "c0ddb5390b40f62479e591e643def2b69c7f5e30d953b0ced326ccd454c7467d",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 40390,
+      "output_tokens": 3107,
+      "reasoning_output_tokens": 2502
+    },
+    "command_executions": [],
+    "run_name": "camp_chair_a_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/chair/raw_observation.json"
+  },
+  "flat2": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 10,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "806e9a2ff374a550d19c294de878ab285f85243dfc8e0029a314caf7ea9e1448",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "2a4c2e720c1e639d35419beedadfd40ffd2da22e371d3c0b17e5915367bcad1b",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 100279,
+      "output_tokens": 4983,
+      "reasoning_output_tokens": 3582
+    },
+    "command_executions": [],
+    "run_name": "flat2_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/flat2/raw_observation.json"
+  },
+  "kitchen1": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 9,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "1e93be2c4d5e3448b93bd81a305f21f015ee68af7279d6891e585032c9b9a890",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "126fed646822a4ad0684f7b40b71982037c56dc0062dac023c6f72a2bcd6236f",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 93018,
+      "output_tokens": 6748,
+      "reasoning_output_tokens": 5266
+    },
+    "command_executions": [],
+    "run_name": "kitchen_clean_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/kitchen1/raw_observation.json"
+  },
+  "m_kitchen1": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 4,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "b4bf710869972af9597948043a426111b680dad931e0f05f7907717989a2f217",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "2830b30de84a8057a37ac273d2e9da145322341e9890cf0e300cdb1f6d232c9f",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 32790,
+      "output_tokens": 2791,
+      "reasoning_output_tokens": 2070
+    },
+    "command_executions": [],
+    "run_name": "mo_kitchen_1_a_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/m_kitchen1/raw_observation.json"
+  },
+  "m_kitchen2": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 4,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "aeb4fb1e0dd405eb40a55ffd43bafe713ccf88ce15182c906f6f9e12ff2b9dbc",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "0326059b3a762fbf2a05b30035523ae940196377e460d331a68ae1cf3450d3fb",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 38477,
+      "output_tokens": 6351,
+      "reasoning_output_tokens": 5547
+    },
+    "command_executions": [],
+    "run_name": "mo_kitchen_2_a_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/m_kitchen2/raw_observation.json"
+  },
+  "m_kitchen3": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 4,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "4fb442b8c76b25ce801eff497047ad6a808133c2c91abdd7e713dda490a33d10",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "1ed4c9ca42e2165135cd800e8060d569028c2560f8d83e3ab072ff91355a2d85",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 11008,
+      "input_tokens": 43522,
+      "output_tokens": 4752,
+      "reasoning_output_tokens": 3988
+    },
+    "command_executions": [],
+    "run_name": "mo_kitchen_3_a_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/m_kitchen3/raw_observation.json"
+  },
+  "car": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 4,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "d70e1a3610a4263f146fa264cebf571f9a11604552518fe378d411bb6530baca",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "7f8c7e1a12fde8c0eff75b1e557f78cde86dc23bfa9e03e041e1a88b5456e23a",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 11008,
+      "input_tokens": 56503,
+      "output_tokens": 1863,
+      "reasoning_output_tokens": 1112
+    },
+    "command_executions": [],
+    "run_name": "race_car_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/car/raw_observation.json"
+  },
+  "flat3": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 8,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "802deb333e0238ca80df190a232f864b637ed3f02afd6b6f1eca57f5ad914c57",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "f15f4a44e286989ea98dd43600cfafd0c17233102157a0aaf1143788460d3ca7",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 11008,
+      "input_tokens": 92983,
+      "output_tokens": 8705,
+      "reasoning_output_tokens": 7406
+    },
+    "command_executions": [],
+    "run_name": "flat3_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/flat3/raw_observation.json"
+  },
+  "kitchen2": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 4,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "519227c5cec8b56a9b649830a40848efbd4623a60892e3a4fb792d0b755f48dd",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "99d353b7671bbc2cc20c1273af6afebce82601740b1ff3e2ff2c51c43b8bebe6",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 45558,
+      "output_tokens": 2684,
+      "reasoning_output_tokens": 1889
+    },
+    "command_executions": [],
+    "run_name": "t_kitchen_drawers_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/kitchen2/raw_observation.json"
+  },
+  "oslo": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 3,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "996dece1bac3e796a5761a71aa6d6043beb38a85038991f6878a645827f443bb",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "0182926041483b00937c8ee1075602d0bd1ed0caebe1553d82b6c1827ec490cf",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 38477,
+      "output_tokens": 673,
+      "reasoning_output_tokens": 191
+    },
+    "command_executions": [],
+    "run_name": "t_oslo_fridge_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/oslo/raw_observation.json"
+  },
+  "flat1": {
+    "status": "complete",
+    "camera": "camera1",
+    "event_count": 7,
+    "prompt_profile": "semantic_parts",
+    "prompt_sha256": "88b727d251a1371d81ad6c320b0307e4ab3213e7d7a34410525dc3f1a6a1153c",
+    "prompt_matches_trial1": true,
+    "inputs_match_trial1": true,
+    "input_sha256_digest": "a7a651dba1354cd96c27062b2ec9c0a09fdbf33f5b7eee066eaee8c4d06c0c23",
+    "usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 11008,
+      "input_tokens": 62851,
+      "output_tokens": 4507,
+      "reasoning_output_tokens": 3345
+    },
+    "command_executions": [],
+    "run_name": "flat1_camera1_stride8_direct480_pixelts_stride_gpt56sol_xhigh_codex_semantic_parts_isolated_batch12_trial7",
+    "raw_observation": "gpt-5.6-sol/xhigh/trial7/flat1/raw_observation.json"
+  }
+}

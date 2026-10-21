@@ -1,0 +1,21 @@
+type: colmap
+downsample_factor: 1
+test_split_interval: 8
+# Optional filename-based split.  When set, files ending in this suffix are
+# validation frames and the interval split is disabled.
+test_frame_suffix: null
+# Match GSplat's camera/point similarity transform before splitting the dataset.
+normalize_world_space: false
+# Match GSplat's sorted image mapping, rounded bicubic PNG cache, and intrinsic correction.
+gsplat_image_downscale: false
+camera_names: null  # Optional folder-name filter, e.g. [front_stereo_camera_left]
+camera_ids: null    # Optional COLMAP numeric camera id filter, e.g. [2]
+load_exif: true  # Load EXIF exposure data from JPEG images for post-processing
+# Decode the training split once into compact uint8 RGB/mask tensors in host RAM.
+# This avoids per-sample image decoding and is intentionally not applied to validation.
+preload_train_data: false
+
+fullcircle:
+  fisheye_valid_mask: ""
+  fisheye_valid_mask_tripod: ""
+  distractor_mask_dilation: null

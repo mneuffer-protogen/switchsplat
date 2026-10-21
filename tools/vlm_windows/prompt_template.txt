@@ -1,0 +1,30 @@
+You are estimating object interaction times from an ordered sequence of separately attached video frames.
+
+Task:
+- The camera observes a user moving through an environment.
+- For each interacted object, the user changes the object from off to on, leaves it on for a while, then changes it from on to off.
+- Events happen consecutively.
+- Each image has its exact source frame number rendered on its pixels as t=FRAME.
+- Return rough midpoint frame numbers for every visible on transition and off transition.
+
+Rules:
+- The top priority is the correct number of interacted objects/events. Rough timing within about 50 frames is still useful.
+- Prefer including a low-confidence event over omitting a plausible object-state episode.
+- Do not merge two adjacent object episodes just because they look visually similar.
+- Detect each distinct localized manipulation episode. Different movable parts or controls of the same larger object are separate events and must not be merged merely because they belong to the same object.
+- The sequence may begin with a setup or base-capture traversal in which the camera circles or surveys the scene. Do not count that traversal unless a specific part or control is manipulated and changes state.
+- When the manipulated part is obscured, repeated approach-manipulate-withdraw cycles, separated by clear disengagement or repositioning, may establish separate episodes.
+- Estimate the midpoint of the user's state-changing action, not only the first frame where the object is perfectly stable or unobstructed.
+- Use the rendered t=FRAME labels for transition timing.
+- If a transition is uncertain, still give the best approximate frame and lower confidence.
+- Keep events in chronological order.
+- Do not invent events with no visual support, but missing an event is worse than reporting a plausible low-confidence one.
+- Valid frame range is {frame_min} to {frame_max}.
+
+Timestamp convention:
+- The attached images are in chronological order.
+- They are sampled every {stride} source frames, with the first and final source frames included.
+- Each image has its exact source-frame number rendered on its pixels as t=FRAME.
+- The rendered t=FRAME label is authoritative; use the stride only as a consistency check.
+
+Analyze only the attached images. Do not inspect the filesystem, run commands, or use external tools. Return only the JSON object required by the output schema.

@@ -1,0 +1,21 @@
+# @package _global_
+# SwitchSplat on the native fisheye frames (supplement, "Training on Native Fisheye Frames").
+# Same recipe as the pinhole model, plus:
+#  - a circular valid region of radius 1260 px (~85 degrees off-axis) for training and testing,
+#    because gsplat's 3DGUT path cannot render beyond 90 degrees
+#    (masking/make_circle_mask.py --radius 1260 regenerates the mask byte for byte);
+#  - Gaussians sorted by distance from the camera instead of depth along the optical axis,
+#    which is the correct order at wide fisheye angles.
+
+defaults:
+  - /apps/colmap_switchsplat
+  - _self_
+
+dataset:
+  fullcircle:
+    fisheye_valid_mask: masking/fisheye_valid_mask_circle_r1260.png
+    fisheye_valid_mask_tripod: masking/fisheye_valid_mask_circle_r1260.png
+
+render:
+  splat:
+    global_z_order: false

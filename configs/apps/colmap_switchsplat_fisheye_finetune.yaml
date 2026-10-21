@@ -1,0 +1,32 @@
+# @package _global_
+# Slot Gaussian fine-tuning (supplement, "Automatic Mask-Guided Slot Refinement").
+# Resume a finished fisheye model (resume=<ckpt_last.pt>) with the object masks of
+# tools/object_masks (loss.slot_mask.mask_run=<masks>/settled) for 3,000 more steps, adding one loss:
+# every object state is rendered on its own and its opacity outside the object's mask is penalised.
+# Everything else (data, losses, renderer, sorting) stays as in the base run.
+
+defaults:
+  - /apps/colmap_switchsplat_fisheye
+  - _self_
+
+loss:
+  use_slot_mask: true
+  lambda_slot_mask: 1.0
+  slot_mask_schedule:
+    start_iteration: 0
+    end_iteration: -1
+    ramp_iterations: 0
+  slot_mask:
+    mask_run: ???          # folder with slotNN/mask/masks.npz and slotNN/labels/labels.npz
+    mask_key: pred_masks_sam
+    camera_id: camera1     # masks exist for the front lens only
+    other_cameras_empty: false
+    soft_gating: false
+    use_label_valid: true
+    mask_dilate_pixels: 6
+
+# The paper's base models stop at 30k steps; the fine-tune adds 3,000.
+n_iterations: 33000
+checkpoint:
+  iterations: ${int_list:[ 31000, 32000, 33000 ]}
+val_frequency: 999999

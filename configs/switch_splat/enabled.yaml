@@ -1,0 +1,16 @@
+# @package switch_splat
+
+enabled: true
+num_slots: null # Derived from init_windows_file (or inline init_windows).
+num_frames: null # Resolved as max(time_idx) + 1 from the train and test splits.
+
+# Relative paths resolve from the dataset root. Inline windows remain available
+# for focused tests and manual experiments.
+init_windows_file: null
+init_windows: null
+
+temperature: 10.0
+
+logits_lr: 0.05
+endpoints_lr: 0.0005
+temperature_lr: 0.002

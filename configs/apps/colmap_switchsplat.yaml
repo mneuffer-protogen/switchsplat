@@ -1,0 +1,56 @@
+# @package _global_
+# SwitchSplat as in the paper: frames at half resolution, batch 4, 30k steps, the gsplat 3DGUT
+# renderer, and object slots initialised from the scene's vlm_prediction.txt. For native fisheye
+# frames use colmap_switchsplat_fisheye.yaml; render=gsplat_3dgs gives the paper's 3DGS variant.
+
+defaults:
+  - /base_gs
+  - /dataset: colmap_fc
+  - /initialization: colmap
+  - /render: gsplat_3dgut
+  - /switch_splat: enabled
+  - _self_
+
+# The paper runs load data in the main process (training images are preloaded into RAM).
+num_workers: 0
+
+dataset:
+  downsample_factor: 2
+  preload_train_data: true
+  test_split_interval: -1
+  test_frame_suffix: null
+  test_frames_file: test_frames.txt
+  fullcircle:
+    # This FC derivative uses perspective cameras, so it has no fisheye border mask.
+    fisheye_valid_mask: ""
+    fisheye_valid_mask_tripod: ""
+    distractor_mask_dilation: 20
+    distractor_mask_white_is_valid: false
+
+switch_splat:
+  init_windows_file: vlm_prediction.txt
+  logit_softening:
+    enabled: true
+    iterations: [18000, 21000]
+    factor: 0.3
+
+loss:
+  use_mode_a: true
+  lambda_mode_a: 0.0001
+  mode_a_schedule:
+    start_iteration: 18000
+    end_iteration: -1
+    ramp_iterations: 1000
+
+  use_slot_spatial_conc: true
+  lambda_slot_spatial_conc: 0.0005
+  slot_spatial_conc_schedule:
+    start_iteration: 21000
+    end_iteration: -1
+    ramp_iterations: 1000
+
+batch_size: 4
+val_frequency: 999999
+
+eval:
+  splits: [test, base_state, novel_view, novel_combo]

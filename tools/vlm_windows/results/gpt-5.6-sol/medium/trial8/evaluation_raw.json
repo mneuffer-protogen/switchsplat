@@ -1,0 +1,1729 @@
+{
+  "batch": "batch12_camera1_stride8_direct480_pixelts_stride_gpt56sol_medium_semantic_parts_isolated_trace_trial8",
+  "configuration": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "camera": "camera1",
+    "stride": 8,
+    "frames_per_sheet": 9,
+    "columns": 3,
+    "tile_width": 480,
+    "input_format": "direct_frames_labeled_stride",
+    "input_image_count": 118,
+    "strip_width": null,
+    "strip_height": null,
+    "image_detail": "codex_default_high",
+    "prompt_profile": "semantic_parts",
+    "postprocessing": false,
+    "reasoning_summary": "detailed"
+  },
+  "aggregate": {
+    "scene_count": 12,
+    "predicted_events": 69,
+    "ground_truth_events": 59,
+    "matched_events": 58,
+    "extras": 11,
+    "misses": 1,
+    "precision": 0.84058,
+    "recall": 0.983051,
+    "endpoint_mae_frames": 3.302,
+    "iou_match_threshold": 0.3,
+    "all_runs_verified": true
+  },
+  "scenes": {
+    "balcony": {
+      "gt": [
+        [
+          87,
+          201
+        ],
+        [
+          297,
+          371
+        ],
+        [
+          470,
+          567
+        ],
+        [
+          621,
+          682
+        ],
+        [
+          757,
+          843
+        ]
+      ],
+      "prediction": [
+        [
+          88,
+          208
+        ],
+        [
+          300,
+          372
+        ],
+        [
+          472,
+          568
+        ],
+        [
+          620,
+          716
+        ],
+        [
+          756,
+          848
+        ]
+      ],
+      "predicted_count": 5,
+      "ground_truth_count": 5,
+      "matched_count": 5,
+      "extra_count": 0,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.933884,
+          "prediction": [
+            88,
+            208
+          ],
+          "ground_truth": [
+            87,
+            201
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 1,
+          "iou": 0.946667,
+          "prediction": [
+            300,
+            372
+          ],
+          "ground_truth": [
+            297,
+            371
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 2,
+          "iou": 0.969388,
+          "prediction": [
+            472,
+            568
+          ],
+          "ground_truth": [
+            470,
+            567
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 3,
+          "iou": 0.635417,
+          "prediction": [
+            620,
+            716
+          ],
+          "ground_truth": [
+            621,
+            682
+          ]
+        },
+        {
+          "prediction_index": 4,
+          "ground_truth_index": 4,
+          "iou": 0.934783,
+          "prediction": [
+            756,
+            848
+          ],
+          "ground_truth": [
+            757,
+            843
+          ]
+        }
+      ],
+      "extra_prediction_indices": [],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 5.6,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/balcony/raw_observation.json"
+    },
+    "chair": {
+      "gt": [
+        [
+          168,
+          293
+        ],
+        [
+          365,
+          472
+        ],
+        [
+          566,
+          682
+        ]
+      ],
+      "prediction": [
+        [
+          176,
+          296
+        ],
+        [
+          568,
+          684
+        ]
+      ],
+      "predicted_count": 2,
+      "ground_truth_count": 3,
+      "matched_count": 2,
+      "extra_count": 0,
+      "miss_count": 1,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.914062,
+          "prediction": [
+            176,
+            296
+          ],
+          "ground_truth": [
+            168,
+            293
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 2,
+          "iou": 0.966102,
+          "prediction": [
+            568,
+            684
+          ],
+          "ground_truth": [
+            566,
+            682
+          ]
+        }
+      ],
+      "extra_prediction_indices": [],
+      "missed_ground_truth_indices": [
+        1
+      ],
+      "endpoint_mae_frames": 3.75,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/chair/raw_observation.json"
+    },
+    "flat2": {
+      "gt": [
+        [
+          99,
+          181
+        ],
+        [
+          299,
+          424
+        ],
+        [
+          537,
+          647
+        ],
+        [
+          749,
+          864
+        ],
+        [
+          974,
+          1093
+        ],
+        [
+          1234,
+          1337
+        ],
+        [
+          1411,
+          1620
+        ],
+        [
+          1677,
+          1855
+        ],
+        [
+          1969,
+          2140
+        ]
+      ],
+      "prediction": [
+        [
+          100,
+          188
+        ],
+        [
+          304,
+          428
+        ],
+        [
+          540,
+          650
+        ],
+        [
+          748,
+          866
+        ],
+        [
+          972,
+          1100
+        ],
+        [
+          972,
+          1100
+        ],
+        [
+          1236,
+          1332
+        ],
+        [
+          1404,
+          1624
+        ],
+        [
+          1676,
+          1860
+        ],
+        [
+          1964,
+          2148
+        ]
+      ],
+      "predicted_count": 10,
+      "ground_truth_count": 9,
+      "matched_count": 9,
+      "extra_count": 1,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.910112,
+          "prediction": [
+            100,
+            188
+          ],
+          "ground_truth": [
+            99,
+            181
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 1,
+          "iou": 0.930233,
+          "prediction": [
+            304,
+            428
+          ],
+          "ground_truth": [
+            299,
+            424
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 2,
+          "iou": 0.946903,
+          "prediction": [
+            540,
+            650
+          ],
+          "ground_truth": [
+            537,
+            647
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 3,
+          "iou": 0.974576,
+          "prediction": [
+            748,
+            866
+          ],
+          "ground_truth": [
+            749,
+            864
+          ]
+        },
+        {
+          "prediction_index": 5,
+          "ground_truth_index": 4,
+          "iou": 0.929688,
+          "prediction": [
+            972,
+            1100
+          ],
+          "ground_truth": [
+            974,
+            1093
+          ]
+        },
+        {
+          "prediction_index": 6,
+          "ground_truth_index": 5,
+          "iou": 0.932039,
+          "prediction": [
+            1236,
+            1332
+          ],
+          "ground_truth": [
+            1234,
+            1337
+          ]
+        },
+        {
+          "prediction_index": 7,
+          "ground_truth_index": 6,
+          "iou": 0.95,
+          "prediction": [
+            1404,
+            1624
+          ],
+          "ground_truth": [
+            1411,
+            1620
+          ]
+        },
+        {
+          "prediction_index": 8,
+          "ground_truth_index": 7,
+          "iou": 0.967391,
+          "prediction": [
+            1676,
+            1860
+          ],
+          "ground_truth": [
+            1677,
+            1855
+          ]
+        },
+        {
+          "prediction_index": 9,
+          "ground_truth_index": 8,
+          "iou": 0.929348,
+          "prediction": [
+            1964,
+            2148
+          ],
+          "ground_truth": [
+            1969,
+            2140
+          ]
+        }
+      ],
+      "extra_prediction_indices": [
+        4
+      ],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 4.0,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/flat2/raw_observation.json"
+    },
+    "kitchen1": {
+      "gt": [
+        [
+          47,
+          270
+        ],
+        [
+          347,
+          495
+        ],
+        [
+          584,
+          742
+        ],
+        [
+          878,
+          1016
+        ],
+        [
+          1103,
+          1207
+        ],
+        [
+          1266,
+          1379
+        ],
+        [
+          1522,
+          1615
+        ],
+        [
+          1764,
+          1868
+        ],
+        [
+          1975,
+          2053
+        ]
+      ],
+      "prediction": [
+        [
+          48,
+          268
+        ],
+        [
+          348,
+          496
+        ],
+        [
+          584,
+          746
+        ],
+        [
+          876,
+          1020
+        ],
+        [
+          1100,
+          1210
+        ],
+        [
+          1102,
+          1214
+        ],
+        [
+          1260,
+          1378
+        ],
+        [
+          1274,
+          1380
+        ],
+        [
+          1524,
+          1618
+        ],
+        [
+          1764,
+          1868
+        ],
+        [
+          1972,
+          2052
+        ]
+      ],
+      "predicted_count": 11,
+      "ground_truth_count": 9,
+      "matched_count": 9,
+      "extra_count": 2,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.986547,
+          "prediction": [
+            48,
+            268
+          ],
+          "ground_truth": [
+            47,
+            270
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 1,
+          "iou": 0.986577,
+          "prediction": [
+            348,
+            496
+          ],
+          "ground_truth": [
+            347,
+            495
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 2,
+          "iou": 0.975309,
+          "prediction": [
+            584,
+            746
+          ],
+          "ground_truth": [
+            584,
+            742
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 3,
+          "iou": 0.958333,
+          "prediction": [
+            876,
+            1020
+          ],
+          "ground_truth": [
+            878,
+            1016
+          ]
+        },
+        {
+          "prediction_index": 4,
+          "ground_truth_index": 4,
+          "iou": 0.945455,
+          "prediction": [
+            1100,
+            1210
+          ],
+          "ground_truth": [
+            1103,
+            1207
+          ]
+        },
+        {
+          "prediction_index": 6,
+          "ground_truth_index": 5,
+          "iou": 0.941176,
+          "prediction": [
+            1260,
+            1378
+          ],
+          "ground_truth": [
+            1266,
+            1379
+          ]
+        },
+        {
+          "prediction_index": 8,
+          "ground_truth_index": 6,
+          "iou": 0.947917,
+          "prediction": [
+            1524,
+            1618
+          ],
+          "ground_truth": [
+            1522,
+            1615
+          ]
+        },
+        {
+          "prediction_index": 9,
+          "ground_truth_index": 7,
+          "iou": 1.0,
+          "prediction": [
+            1764,
+            1868
+          ],
+          "ground_truth": [
+            1764,
+            1868
+          ]
+        },
+        {
+          "prediction_index": 10,
+          "ground_truth_index": 8,
+          "iou": 0.950617,
+          "prediction": [
+            1972,
+            2052
+          ],
+          "ground_truth": [
+            1975,
+            2053
+          ]
+        }
+      ],
+      "extra_prediction_indices": [
+        5,
+        7
+      ],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 2.056,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/kitchen1/raw_observation.json"
+    },
+    "m_kitchen1": {
+      "gt": [
+        [
+          104,
+          319
+        ],
+        [
+          217,
+          472
+        ],
+        [
+          361,
+          511
+        ]
+      ],
+      "prediction": [
+        [
+          100,
+          324
+        ],
+        [
+          116,
+          316
+        ],
+        [
+          212,
+          476
+        ],
+        [
+          356,
+          508
+        ]
+      ],
+      "predicted_count": 4,
+      "ground_truth_count": 3,
+      "matched_count": 3,
+      "extra_count": 1,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.959821,
+          "prediction": [
+            100,
+            324
+          ],
+          "ground_truth": [
+            104,
+            319
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 1,
+          "iou": 0.965909,
+          "prediction": [
+            212,
+            476
+          ],
+          "ground_truth": [
+            217,
+            472
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 2,
+          "iou": 0.948387,
+          "prediction": [
+            356,
+            508
+          ],
+          "ground_truth": [
+            361,
+            511
+          ]
+        }
+      ],
+      "extra_prediction_indices": [
+        1
+      ],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 4.333,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/m_kitchen1/raw_observation.json"
+    },
+    "m_kitchen2": {
+      "gt": [
+        [
+          117,
+          447
+        ],
+        [
+          348,
+          597
+        ],
+        [
+          494,
+          652
+        ]
+      ],
+      "prediction": [
+        [
+          116,
+          452
+        ],
+        [
+          340,
+          596
+        ],
+        [
+          352,
+          598
+        ],
+        [
+          492,
+          652
+        ]
+      ],
+      "predicted_count": 4,
+      "ground_truth_count": 3,
+      "matched_count": 3,
+      "extra_count": 1,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.982143,
+          "prediction": [
+            116,
+            452
+          ],
+          "ground_truth": [
+            117,
+            447
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 1,
+          "iou": 0.98,
+          "prediction": [
+            352,
+            598
+          ],
+          "ground_truth": [
+            348,
+            597
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 2,
+          "iou": 0.9875,
+          "prediction": [
+            492,
+            652
+          ],
+          "ground_truth": [
+            494,
+            652
+          ]
+        }
+      ],
+      "extra_prediction_indices": [
+        1
+      ],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 2.167,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/m_kitchen2/raw_observation.json"
+    },
+    "m_kitchen3": {
+      "gt": [
+        [
+          139,
+          768
+        ],
+        [
+          373,
+          722
+        ],
+        [
+          539,
+          654
+        ]
+      ],
+      "prediction": [
+        [
+          136,
+          772
+        ],
+        [
+          364,
+          444
+        ],
+        [
+          380,
+          412
+        ],
+        [
+          428,
+          726
+        ],
+        [
+          460,
+          720
+        ],
+        [
+          540,
+          652
+        ]
+      ],
+      "predicted_count": 6,
+      "ground_truth_count": 3,
+      "matched_count": 3,
+      "extra_count": 3,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.988994,
+          "prediction": [
+            136,
+            772
+          ],
+          "ground_truth": [
+            139,
+            768
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 1,
+          "iou": 0.832861,
+          "prediction": [
+            428,
+            726
+          ],
+          "ground_truth": [
+            373,
+            722
+          ]
+        },
+        {
+          "prediction_index": 5,
+          "ground_truth_index": 2,
+          "iou": 0.973913,
+          "prediction": [
+            540,
+            652
+          ],
+          "ground_truth": [
+            539,
+            654
+          ]
+        }
+      ],
+      "extra_prediction_indices": [
+        1,
+        2,
+        4
+      ],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 11.5,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/m_kitchen3/raw_observation.json"
+    },
+    "car": {
+      "gt": [
+        [
+          195,
+          319
+        ],
+        [
+          437,
+          523
+        ],
+        [
+          614,
+          781
+        ],
+        [
+          905,
+          1065
+        ]
+      ],
+      "prediction": [
+        [
+          196,
+          324
+        ],
+        [
+          436,
+          524
+        ],
+        [
+          616,
+          784
+        ],
+        [
+          906,
+          1068
+        ]
+      ],
+      "predicted_count": 4,
+      "ground_truth_count": 4,
+      "matched_count": 4,
+      "extra_count": 0,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.953488,
+          "prediction": [
+            196,
+            324
+          ],
+          "ground_truth": [
+            195,
+            319
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 1,
+          "iou": 0.977273,
+          "prediction": [
+            436,
+            524
+          ],
+          "ground_truth": [
+            437,
+            523
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 2,
+          "iou": 0.970588,
+          "prediction": [
+            616,
+            784
+          ],
+          "ground_truth": [
+            614,
+            781
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 3,
+          "iou": 0.97546,
+          "prediction": [
+            906,
+            1068
+          ],
+          "ground_truth": [
+            905,
+            1065
+          ]
+        }
+      ],
+      "extra_prediction_indices": [],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 2.125,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/car/raw_observation.json"
+    },
+    "flat3": {
+      "gt": [
+        [
+          138,
+          264
+        ],
+        [
+          326,
+          400
+        ],
+        [
+          440,
+          541
+        ],
+        [
+          585,
+          678
+        ],
+        [
+          725,
+          931
+        ],
+        [
+          993,
+          1094
+        ],
+        [
+          1211,
+          1365
+        ],
+        [
+          1486,
+          1624
+        ],
+        [
+          1805,
+          2023
+        ]
+      ],
+      "prediction": [
+        [
+          136,
+          264
+        ],
+        [
+          328,
+          400
+        ],
+        [
+          440,
+          540
+        ],
+        [
+          584,
+          680
+        ],
+        [
+          724,
+          932
+        ],
+        [
+          992,
+          1096
+        ],
+        [
+          1212,
+          1368
+        ],
+        [
+          1480,
+          1632
+        ],
+        [
+          1804,
+          2024
+        ]
+      ],
+      "predicted_count": 9,
+      "ground_truth_count": 9,
+      "matched_count": 9,
+      "extra_count": 0,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.984375,
+          "prediction": [
+            136,
+            264
+          ],
+          "ground_truth": [
+            138,
+            264
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 1,
+          "iou": 0.972973,
+          "prediction": [
+            328,
+            400
+          ],
+          "ground_truth": [
+            326,
+            400
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 2,
+          "iou": 0.990099,
+          "prediction": [
+            440,
+            540
+          ],
+          "ground_truth": [
+            440,
+            541
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 3,
+          "iou": 0.96875,
+          "prediction": [
+            584,
+            680
+          ],
+          "ground_truth": [
+            585,
+            678
+          ]
+        },
+        {
+          "prediction_index": 4,
+          "ground_truth_index": 4,
+          "iou": 0.990385,
+          "prediction": [
+            724,
+            932
+          ],
+          "ground_truth": [
+            725,
+            931
+          ]
+        },
+        {
+          "prediction_index": 5,
+          "ground_truth_index": 5,
+          "iou": 0.971154,
+          "prediction": [
+            992,
+            1096
+          ],
+          "ground_truth": [
+            993,
+            1094
+          ]
+        },
+        {
+          "prediction_index": 6,
+          "ground_truth_index": 6,
+          "iou": 0.974522,
+          "prediction": [
+            1212,
+            1368
+          ],
+          "ground_truth": [
+            1211,
+            1365
+          ]
+        },
+        {
+          "prediction_index": 7,
+          "ground_truth_index": 7,
+          "iou": 0.907895,
+          "prediction": [
+            1480,
+            1632
+          ],
+          "ground_truth": [
+            1486,
+            1624
+          ]
+        },
+        {
+          "prediction_index": 8,
+          "ground_truth_index": 8,
+          "iou": 0.990909,
+          "prediction": [
+            1804,
+            2024
+          ],
+          "ground_truth": [
+            1805,
+            2023
+          ]
+        }
+      ],
+      "extra_prediction_indices": [],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 1.833,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/flat3/raw_observation.json"
+    },
+    "kitchen2": {
+      "gt": [
+        [
+          153,
+          299
+        ],
+        [
+          377,
+          555
+        ],
+        [
+          660,
+          814
+        ]
+      ],
+      "prediction": [
+        [
+          152,
+          300
+        ],
+        [
+          370,
+          550
+        ],
+        [
+          388,
+          556
+        ],
+        [
+          660,
+          814
+        ]
+      ],
+      "predicted_count": 4,
+      "ground_truth_count": 3,
+      "matched_count": 3,
+      "extra_count": 1,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.986486,
+          "prediction": [
+            152,
+            300
+          ],
+          "ground_truth": [
+            153,
+            299
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 1,
+          "iou": 0.935135,
+          "prediction": [
+            370,
+            550
+          ],
+          "ground_truth": [
+            377,
+            555
+          ]
+        },
+        {
+          "prediction_index": 3,
+          "ground_truth_index": 2,
+          "iou": 1.0,
+          "prediction": [
+            660,
+            814
+          ],
+          "ground_truth": [
+            660,
+            814
+          ]
+        }
+      ],
+      "extra_prediction_indices": [
+        2
+      ],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 2.333,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/kitchen2/raw_observation.json"
+    },
+    "oslo": {
+      "gt": [
+        [
+          128,
+          244
+        ],
+        [
+          300,
+          430
+        ],
+        [
+          488,
+          618
+        ]
+      ],
+      "prediction": [
+        [
+          124,
+          244
+        ],
+        [
+          300,
+          430
+        ],
+        [
+          484,
+          620
+        ]
+      ],
+      "predicted_count": 3,
+      "ground_truth_count": 3,
+      "matched_count": 3,
+      "extra_count": 0,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.966667,
+          "prediction": [
+            124,
+            244
+          ],
+          "ground_truth": [
+            128,
+            244
+          ]
+        },
+        {
+          "prediction_index": 1,
+          "ground_truth_index": 1,
+          "iou": 1.0,
+          "prediction": [
+            300,
+            430
+          ],
+          "ground_truth": [
+            300,
+            430
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 2,
+          "iou": 0.955882,
+          "prediction": [
+            484,
+            620
+          ],
+          "ground_truth": [
+            488,
+            618
+          ]
+        }
+      ],
+      "extra_prediction_indices": [],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 1.667,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/oslo/raw_observation.json"
+    },
+    "flat1": {
+      "gt": [
+        [
+          72,
+          250
+        ],
+        [
+          320,
+          485
+        ],
+        [
+          590,
+          737
+        ],
+        [
+          796,
+          964
+        ],
+        [
+          1029,
+          1212
+        ]
+      ],
+      "prediction": [
+        [
+          64,
+          248
+        ],
+        [
+          74,
+          258
+        ],
+        [
+          316,
+          484
+        ],
+        [
+          332,
+          492
+        ],
+        [
+          588,
+          740
+        ],
+        [
+          796,
+          964
+        ],
+        [
+          1028,
+          1212
+        ]
+      ],
+      "predicted_count": 7,
+      "ground_truth_count": 5,
+      "matched_count": 5,
+      "extra_count": 2,
+      "miss_count": 0,
+      "matches": [
+        {
+          "prediction_index": 0,
+          "ground_truth_index": 0,
+          "iou": 0.946237,
+          "prediction": [
+            64,
+            248
+          ],
+          "ground_truth": [
+            72,
+            250
+          ]
+        },
+        {
+          "prediction_index": 2,
+          "ground_truth_index": 1,
+          "iou": 0.970414,
+          "prediction": [
+            316,
+            484
+          ],
+          "ground_truth": [
+            320,
+            485
+          ]
+        },
+        {
+          "prediction_index": 4,
+          "ground_truth_index": 2,
+          "iou": 0.967105,
+          "prediction": [
+            588,
+            740
+          ],
+          "ground_truth": [
+            590,
+            737
+          ]
+        },
+        {
+          "prediction_index": 5,
+          "ground_truth_index": 3,
+          "iou": 1.0,
+          "prediction": [
+            796,
+            964
+          ],
+          "ground_truth": [
+            796,
+            964
+          ]
+        },
+        {
+          "prediction_index": 6,
+          "ground_truth_index": 4,
+          "iou": 0.994565,
+          "prediction": [
+            1028,
+            1212
+          ],
+          "ground_truth": [
+            1029,
+            1212
+          ]
+        }
+      ],
+      "extra_prediction_indices": [
+        1,
+        3
+      ],
+      "missed_ground_truth_indices": [],
+      "endpoint_mae_frames": 2.1,
+      "verification": {
+        "status_complete": true,
+        "camera": true,
+        "model": true,
+        "effort": true,
+        "profile": true,
+        "trace_nonempty": true,
+        "reasoning_items": true,
+        "git_clean": true,
+        "no_gt_observation": true,
+        "no_postprocessing": true,
+        "prompt_matches_trial2": true,
+        "contact_sheets_match_trial2": true,
+        "inputs_match_trial1": true,
+        "no_unexpected_tool_use": true,
+        "requested_image_detail_verified": true
+      },
+      "raw_observation": "gpt-5.6-sol/medium/trial8/flat1/raw_observation.json"
+    }
+  }
+}

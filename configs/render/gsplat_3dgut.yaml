@@ -1,0 +1,15 @@
+defaults:
+  - 3dgut
+  - _self_
+
+method: gsplat_3dgut
+
+gsplat:
+  renderer_config: parallel_batch
+  tile_size: 16
+  packed: false
+  sparse_grad: false
+  absgrad: false
+  rasterize_mode: classic
+  radius_clip: 0.0
+  eps2d: 0.3

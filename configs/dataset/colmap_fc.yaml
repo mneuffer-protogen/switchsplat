@@ -1,0 +1,13 @@
+# configs/dataset/colmap_fc.yaml
+defaults:
+  - colmap
+  - _self_
+
+downsample_factor: 4
+test_split_interval: -1
+test_frame_suffix: "_test"
+
+fullcircle:
+  fisheye_valid_mask: "masking/fisheye_valid_mask.png"
+  fisheye_valid_mask_tripod: "masking/fisheye_valid_mask_tripod.png"
+  distractor_mask_dilation: 5

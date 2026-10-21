@@ -1,0 +1,477 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import time
+from typing import Tuple
+
+import numpy as np
+import torch
+import viser
+
+from threedgrut.datasets.protocols import Batch
+from threedgrut.datasets.utils import DEFAULT_DEVICE, fov2focal
+from threedgrut.utils.misc import to_np
+from threedgrut.utils.render import apply_feature_decoder
+from threedgrut.utils.switch_splat_timetable import render_switch_splat_timetable
+from threedgrut.utils.timer import CudaTimer
+
+
+class ViserGUI:
+    def __init__(self, conf, model, train_dataset, val_dataset, scene_bbox, feature_decoder=None):
+        self.conf = conf
+        self.model = model
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+        self.scene_bbox = scene_bbox
+        self.feature_decoder = feature_decoder
+        self.feature_decoder_center_ray_encoding = bool(
+            getattr(getattr(conf.model, "nht_decoder", None), "center_ray_encoding", False)
+        )
+
+        # Initialize Viser server
+        self.server = viser.ViserServer(port=int(self.conf.viser_port))
+
+        # GUI state
+        self.viz_do_train = True
+        self.viz_final = True
+        self.training_done = False
+        self.viz_bbox = False
+        self.live_update = True
+        self.viz_render_styles = ["color", "density", "distance", "hits", "normals"]
+        self.viz_render_style = "color"
+        self.viz_render_style_scale = 1.0
+        self.viz_render_enabled = True
+        self.viz_render_subsample = 1
+        self.viz_render_train_view = True
+        self.viz_render_show_details = False
+        self.render_timer = CudaTimer()
+        self.render_width = 1920
+        self.render_height = 1080
+        self.terminate_gui = False
+        self.show_point_cloud = False
+        self.scene_center, self.scene_radius = self._compute_scene_frame()
+
+        self.server.scene.set_up_direction("+z" if self.conf.dataset.type == "nerf" else "-y")
+        self._configure_initial_camera()
+
+        # Initialize UI components
+        self._init_ui()
+
+        # Initialize scene visualization
+        self.point_cloud = None
+        self.init_point_cloud()
+
+        @self.do_train_checkbox.on_update
+        def _(_):
+            self.viz_do_train = self.do_train_checkbox.value
+
+        @self.live_update_checkbox.on_update
+        def _(_):
+            self.live_update = self.live_update_checkbox.value
+
+        @self.show_render_checkbox.on_update
+        def _(_):
+            self.viz_render_enabled = self.show_render_checkbox.value
+
+        @self.render_style_dropdown.on_update
+        def _(_):
+            self.viz_render_style = self.render_style_dropdown.value
+
+        @self.terminate_gui_checkbox.on_update
+        def _(_):
+            self.terminate_gui = self.terminate_gui_checkbox.value
+
+        @self.show_point_cloud_checkbox.on_update
+        def _(_):
+            self.show_point_cloud = self.show_point_cloud_checkbox.value
+
+        @self.subsample_slider.on_update
+        def _(_):
+            self.viz_render_subsample = self.subsample_slider.value
+
+        @self.reset_view_button.on_click
+        def _(_):
+            for client in self.server.get_clients().values():
+                self.reset_client_view(client)
+
+        @self.server.on_client_connect
+        def _(client: viser.ClientHandle):
+            self.reset_client_view(client)
+
+    def _init_ui(self):
+        """Initialize UI components"""
+        # Main control panel
+        with self.server.gui.add_folder("Controls"):
+            # Render controls
+            self.render_style_dropdown = self.server.gui.add_dropdown(
+                "Render Style", options=self.viz_render_styles, initial_value=self.viz_render_styles[0]
+            )
+
+            self.show_render_checkbox = self.server.gui.add_checkbox("Show Render", initial_value=True)
+
+            self.adjust_resolution_checkbox = self.server.gui.add_checkbox("Adjust Browser Size", initial_value=False)
+
+            self.resolution_slider = self.server.gui.add_slider(
+                "Resolution", min=384, max=4096, step=2, initial_value=1024
+            )
+
+            self.subsample_slider = self.server.gui.add_slider("Subsample", min=1, max=8, step=1, initial_value=1)
+
+            # Training controls
+            self.do_train_checkbox = self.server.gui.add_checkbox("Do Training", initial_value=True)
+
+            self.live_update_checkbox = self.server.gui.add_checkbox("Live Update", initial_value=True)
+
+            self.terminate_gui_checkbox = self.server.gui.add_checkbox("Terminate GUI", initial_value=False)
+
+            self.show_point_cloud_checkbox = self.server.gui.add_checkbox("Show Point Cloud", initial_value=False)
+
+            # Camera controls
+            self.camera_type_dropdown = self.server.gui.add_dropdown(
+                "Camera Type", options=["Perspective", "Fisheye"], initial_value="Perspective"
+            )
+            self.reset_view_button = self.server.gui.add_button("Reset View")
+
+            # Export controls
+            self.export_button = self.server.gui.add_button("Export Model")
+
+        self.switch_state_checkboxes = []
+        self.switch_timetable_image = None
+        controller = getattr(self.model, "switch_splat_controller", None)
+        if controller is not None:
+            with self.server.gui.add_folder("SwitchSplat"):
+                groups = ["A"] + [chr(ord("B") + index) for index in range(controller.num_slots)]
+                states = ["A"] + [f"{group}{state}" for group in groups[1:] for state in (1, 2)]
+                self.switch_state_checkboxes = [
+                    self.server.gui.add_checkbox(name, initial_value=index == 0 or index % 2 == 1)
+                    for index, name in enumerate(states)
+                ]
+                for index, name in enumerate(groups):
+                    indices = (0,) if index == 0 else (2 * index - 1, 2 * index)
+                    self.server.gui.add_button(name).on_click(
+                        lambda _, indices=indices: self._toggle_switch_states(indices)
+                    )
+                dataset_times = [
+                    np.asarray(dataset.time_indices)
+                    for dataset in (self.train_dataset, self.val_dataset)
+                    if getattr(dataset, "time_indices", None) is not None
+                ]
+                if dataset_times:
+                    lo, hi = np.min(np.concatenate(dataset_times)), np.max(np.concatenate(dataset_times))
+                    self.switch_timetable_times = np.arange(lo, hi + 1, dtype=np.float64)
+                    self.switch_timetable_gt_windows = np.asarray(self.conf.switch_splat.init_windows)
+                    panel = self.server.gui.add_panel()
+                    with panel.add_tab("SwitchSplat"):
+                        self.switch_timetable_image = self.server.gui.add_image(
+                            self._render_switch_timetable(), format="png"
+                        )
+                    panel.dock_right()
+                    panel.set_width(720)
+                    self._last_timetable_update = time.monotonic()
+
+    def _toggle_switch_states(self, indices):
+        for index in indices:
+            checkbox = self.switch_state_checkboxes[index]
+            checkbox.value = not checkbox.value
+
+    def _switch_state_activations(self):
+        if not self.switch_state_checkboxes:
+            return None
+        return torch.tensor(
+            [[checkbox.value for checkbox in self.switch_state_checkboxes]],
+            device=self.model.positions.device,
+            dtype=self.model.positions.dtype,
+        )
+
+    def _render_switch_timetable(self, step=None):
+        return render_switch_splat_timetable(
+            self.model.switch_splat_controller,
+            self.switch_timetable_times,
+            self.switch_timetable_gt_windows,
+            step,
+        )
+
+    def update_switch_timetable(self, step=None):
+        now = time.monotonic()
+        if (
+            not self.live_update
+            or self.switch_timetable_image is None
+            or not self.server.get_clients()
+            or now - self._last_timetable_update < 5.0
+        ):
+            return
+        self.switch_timetable_image.image = self._render_switch_timetable(step)
+        self._last_timetable_update = now
+
+    def init_point_cloud(self):
+        # Add point cloud for gaussian centers
+        self.point_cloud = self.server.scene.add_point_cloud(
+            "3dgs object points",
+            points=to_np(self.model.positions),
+            colors=to_np(self.model.features_albedo),
+            point_size=0.001,
+        )
+
+    def update_point_cloud(self):
+        if self.show_point_cloud:
+            if self.point_cloud is not None:
+                self.point_cloud.points = to_np(self.model.positions)
+                self.point_cloud.colors = to_np(self.model.features_albedo)
+            else:
+                self.init_point_cloud()
+        else:
+            self.remove_point_cloud()
+
+    def remove_point_cloud(self):
+        if self.point_cloud is not None:
+            self.point_cloud.remove()
+            self.point_cloud = None
+
+    def _compute_scene_frame(self) -> Tuple[np.ndarray, float]:
+        bbox_min = np.asarray(to_np(self.scene_bbox[0]), dtype=np.float32)
+        bbox_max = np.asarray(to_np(self.scene_bbox[1]), dtype=np.float32)
+        center = 0.5 * (bbox_min + bbox_max)
+        bbox_radius = 0.5 * np.linalg.norm(bbox_max - bbox_min)
+        radius = max(bbox_radius, float(self.train_dataset.get_scene_extent()), 1e-2)
+        return center, radius
+
+    def _get_world_up_direction(self) -> np.ndarray:
+        if self.conf.dataset.type == "nerf":
+            return np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        return np.array([0.0, -1.0, 0.0], dtype=np.float32)
+
+    def _get_default_view_offset(self) -> np.ndarray:
+        if self.conf.dataset.type == "nerf":
+            return np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        return np.array([0.0, 0.0, 1.0], dtype=np.float32)
+
+    def _get_initial_camera_pose_from_dataset(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        poses = self.train_dataset.get_poses()
+        if poses is None or len(poses) == 0:
+            return None
+
+        c2w = np.asarray(poses[0], dtype=np.float32)
+        if c2w.shape != (4, 4):
+            return None
+
+        position = c2w[:3, 3]
+        forward = c2w[:3, 2]
+        up = -c2w[:3, 1]
+
+        # Project scene center onto the camera's forward ray to get an orbit
+        # center that is along the viewing direction at scene-content depth.
+        t = np.dot(self.scene_center - position, forward)
+        if t > 0:
+            look_at = position + forward * t
+        else:
+            look_at = self.scene_center
+
+        return position, look_at, up
+
+    def _configure_initial_camera(self):
+        dataset_camera_pose = self._get_initial_camera_pose_from_dataset()
+        if dataset_camera_pose is not None:
+            position, look_at, up = dataset_camera_pose
+            self.server.initial_camera.position = position
+            self.server.initial_camera.look_at = look_at
+            self.server.initial_camera.up = up
+        else:
+            distance = max(2.0 * self.scene_radius, 1.0)
+            self.server.initial_camera.position = self.scene_center + self._get_default_view_offset() * distance
+            self.server.initial_camera.look_at = self.scene_center
+            self.server.initial_camera.up = self._get_world_up_direction()
+
+    def reset_client_view(self, client: viser.ClientHandle):
+        client.camera.position = np.asarray(self.server.initial_camera.position, dtype=np.float32)
+        client.camera.look_at = np.asarray(self.server.initial_camera.look_at, dtype=np.float32)
+        client.camera.up_direction = np.asarray(self.server.initial_camera.up, dtype=np.float32)
+
+    def get_viser_c2w(self, camera):
+        from threedgrut.utils.misc import quaternion_to_so3
+
+        c2w = np.eye(4, dtype=np.float32)
+        # camera.wxyz: (4,) numpy, quaternion (w, x, y, z)
+        # quaternion_to_so3 expects (N,4) torch, so convert
+        q = np.asarray(camera.wxyz)[None, :]
+        q_torch = torch.from_numpy(q).float()
+        R = quaternion_to_so3(q_torch)[0].cpu().numpy()
+        c2w[:3, :3] = R
+        c2w[:3, 3] = np.asarray(camera.position, dtype=np.float32)
+        return c2w
+
+    def get_render_c2w(self, camera):
+        # Viser already exposes camera poses in the same COLMAP/OpenCV
+        # right/down/front convention expected by 3DGRUT batches.
+        return self.get_viser_c2w(camera)
+
+    def get_render_w2c(self, camera):
+        return np.linalg.inv(self.get_render_c2w(camera))
+
+    def render_from_current_view(
+        self, client
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, np.ndarray]:
+        """Render from the current Viser camera using the renderer pose convention."""
+        # Get current camera parameters from viser
+        camera = client.camera
+
+        # Get window size and apply subsample
+
+        if self.adjust_resolution_checkbox.value:
+            window_w = self.render_width // self.viz_render_subsample
+            window_h = self.render_height // self.viz_render_subsample
+        else:
+            window_w = self.resolution_slider.value
+            window_h = int(self.resolution_slider.value / camera.aspect)
+
+        render_c2w = self.get_render_c2w(camera)
+        render_w2c = self.get_render_w2c(camera)
+
+        # Get FOV and calculate focal length
+        fov_vertical_deg = camera.fov / np.pi * 180.0
+        FOCAL = fov2focal(np.deg2rad(fov_vertical_deg), window_h)
+
+        # Generate ray directions similar to polyscope version
+        interp_x, interp_y = torch.meshgrid(
+            torch.linspace(0.0, window_w - 1, window_w, device=DEFAULT_DEVICE, dtype=torch.float32),
+            torch.linspace(0.0, window_h - 1, window_h, device=DEFAULT_DEVICE, dtype=torch.float32),
+            indexing="xy",
+        )
+        u = interp_x
+        v = interp_y
+
+        xs = ((u + 0.5) - 0.5 * window_w) / FOCAL
+        ys = ((v + 0.5) - 0.5 * window_h) / FOCAL
+        rays_dir = torch.nn.functional.normalize(torch.stack((xs, ys, torch.ones_like(xs)), axis=-1), dim=-1).unsqueeze(
+            0
+        )
+
+        # Create Batch object similar to polyscope version
+        inputs = Batch(
+            intrinsics=[FOCAL, FOCAL, window_w / 2, window_h / 2],
+            T_to_world=torch.from_numpy(render_c2w).unsqueeze(0),
+            rays_ori=torch.zeros((1, window_h, window_w, 3), device=DEFAULT_DEVICE, dtype=torch.float32),
+            rays_dir=rays_dir.reshape(1, window_h, window_w, 3),
+        )
+
+        # Render using model(inputs) instead of model.render()
+        with torch.no_grad():
+            self.render_timer.start()
+            outputs = self.model(
+                inputs, train=self.viz_render_train_view, state_activations=self._switch_state_activations()
+            )
+
+            # The model returns learned NHT features. Decode them here so the
+            # GUI always receives the same RGB output as the training loop.
+            outputs = apply_feature_decoder(
+                self.feature_decoder,
+                outputs,
+                inputs,
+                training=self.viz_render_train_view,
+                center_ray_encoding=self.feature_decoder_center_ray_encoding,
+            )
+            self.render_timer.end()
+            self.render_width = window_w
+            self.render_height = window_h
+
+        points = to_np(self.model.positions)
+        points_h = np.concatenate([points, np.ones((points.shape[0], 1))], axis=1)  # (N,4)
+        points_cam = (render_w2c @ points_h.T).T  # (N,4)
+
+        X, Y, Z, _ = points_cam.T
+
+        mask = Z > 0
+        X = X[mask]
+        Y = Y[mask]
+        Z = Z[mask]
+
+        fx, fy = FOCAL, FOCAL
+        cx, cy = window_w / 2, window_h / 2
+
+        u = fx * (X / Z) + cx
+        v = fy * (Y / Z) + cy
+
+        points_plane = np.stack([u, v], axis=1)
+
+        return (
+            outputs["pred_features"],
+            outputs["pred_opacity"],
+            outputs["pred_dist"],
+            outputs["pred_normals"],
+            outputs["hits_count"] / self.conf.writer.max_num_hits,
+            points_plane,
+        )
+
+    def update_render_view(self, client, force: bool = False):
+        # Get current render style
+        style = self.viz_render_style
+
+        # Render current view
+        sple_orad, sple_odns, sple_odist, sple_onrm, sple_ohit, points_plane = self.render_from_current_view(client)
+
+        """Update rendered view - rewritten to match polyscope version"""
+        if not self.viz_render_enabled and force:
+            # Create a pure white background image
+            # Get the shape from the model's features_specular to maintain dimensions
+            rgb_np = to_np(sple_orad[0])
+            img = np.ones(rgb_np.shape, dtype=np.float32)  # Pure white image
+            client.scene.set_background_image(img)
+            return
+
+        # Update viser background image based on style
+        if style == "color":
+            # Convert RGB to numpy and set as background
+            rgb_np = to_np(sple_orad[0])  # Remove batch dimension
+            # rgb_np[points_plane[:, 0], points_plane[:, 1]] = [0, 0, 255]
+            client.scene.set_background_image(rgb_np)
+        elif style == "density":
+            # Convert density to grayscale image
+            density_np = to_np(sple_odns)
+            density_255 = 255 * (density_np - density_np.min()) / (density_np.max() - density_np.min() + 1e-8)
+            density_255 = density_255.astype(np.uint8)
+            img = np.repeat(density_255[0], 3, axis=2)
+            client.scene.set_background_image(img)
+
+        elif style == "distance":
+            distance_np = to_np(sple_odist)
+            distance_255 = 255 * (distance_np - distance_np.min()) / (distance_np.max() - distance_np.min() + 1e-8)
+            distance_255 = distance_255.astype(np.uint8)
+            img = np.repeat(distance_255[0], 3, axis=2)
+            img[:, :, 1:] = 0
+            client.scene.set_background_image(img)
+
+        elif style == "hits":
+            # Convert hits count to grayscale image
+            hits_np = to_np(sple_ohit)
+            hits_255 = 255 * (hits_np - hits_np.min()) / (hits_np.max() - hits_np.min() + 1e-8)
+            hits_255 = hits_255.astype(np.uint8)
+            img = np.repeat(hits_255[0], 3, axis=2)
+            img[:, :, 2:] = 0
+            client.scene.set_background_image(img)
+        elif style == "normals":
+            # Convert normals to RGB image
+            normals_np = to_np(sple_onrm)
+            normals_255 = 255 * (normals_np - normals_np.min()) / (normals_np.max() - normals_np.min() + 1e-8)
+            normals_255 = normals_255.astype(np.uint8)
+            img = np.repeat(normals_255[0], 3, axis=2)
+            # img[:, :, 0] = 0
+            client.scene.set_background_image(img)
+
+    def block_in_rendering_loop(self, fps: int = 60):
+        """Block in rendering loop"""
+        while not self.terminate_gui and self.training_done:
+            if self.live_update:
+                for client in self.server.get_clients().values():
+                    self.update_render_view(client, force=True)
+            time.sleep(1.0 / fps)

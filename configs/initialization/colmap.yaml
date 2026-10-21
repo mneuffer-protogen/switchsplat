@@ -1,0 +1,5 @@
+method: colmap
+observation_scale_factor: 0.01
+use_observation_points: true
+# Deterministically retain approximately 1/N COLMAP points at initialization.
+subsample_factor: 1

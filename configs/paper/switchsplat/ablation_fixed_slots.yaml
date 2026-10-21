@@ -1,0 +1,16 @@
+# @package _global_
+# Ablation of the SwitchSplat paper (Kitchen 2): slots kept at the VLM's windows (not optimised),
+# with a temperature of 0.1. The paper's runs of this ablation (seed_initialization=73..79) started
+# from the windows of the second max-effort VLM run instead of the released vlm_prediction.txt:
+#   python tools/vlm_windows/predict_windows.py data/switchsplat_pinhole/kitchen2 --out-dir runs/vlm_trial2 \
+#       --replay tools/vlm_windows/results/gpt-5.6-sol/max/trial2/kitchen2
+# then add switch_splat.init_windows_file=$PWD/runs/vlm_trial2/vlm_prediction.txt.
+
+defaults:
+  - /apps/colmap_switchsplat
+  - _self_
+
+switch_splat:
+  endpoints_lr: 0.0
+  temperature_lr: 0.0
+  temperature: 0.1

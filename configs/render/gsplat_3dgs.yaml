@@ -1,0 +1,14 @@
+defaults:
+  - 3dgrt
+  - _self_
+
+method: gsplat_3dgs
+
+gsplat:
+  packed: true
+  sparse_grad: false
+  absgrad: false
+  rasterize_mode: classic
+  radius_clip: 0.0
+  eps2d: 0.3
+  global_z_order: true

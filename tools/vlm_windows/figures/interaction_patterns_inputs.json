@@ -1,0 +1,462 @@
+{
+  "schema_version": 1,
+  "endpoint_authority": "Ground-truth interaction_times.txt files; inclusive integer frame pairs.",
+  "semantic_label_policy": "Visualization-only concise aliases derived from ground-truth-matched VLM object descriptions. Labels never define or modify endpoints.",
+  "semantic_source_evaluation": {
+    "path": "gpt-5.6-sol/max/trial1/evaluation_raw.json",
+    "sha256": "25b8b4aad8b5188fc8b2821b07d7bc57ed487dfdf275677736c3bfff8219ea55"
+  },
+  "scenes": [
+    {
+      "scene_id": "balcony",
+      "display_name": "Balcony",
+      "endpoint_file": "balcony.txt",
+      "endpoint_sha256": "866dc32c83e83fa7185d8a2fbcaa2a251224fbb5cf3bbfa31aace613d52a7d27",
+      "camera1_frame_range": [
+        1,
+        929
+      ],
+      "semantic_source_sha256": "30e6be6f6d01149378c69a86daa3a6fc86ec33165415d93dfaeb868f2f3c2e3b",
+      "labels": [
+        {
+          "short": "Chaise back",
+          "prediction_index": 0,
+          "source": "Adjustable backrest of the white chaise lounge"
+        },
+        {
+          "short": "Grill lid",
+          "prediction_index": 1,
+          "source": "Main cooking lid of the barbecue grill"
+        },
+        {
+          "short": "Propane door",
+          "prediction_index": 2,
+          "source": "Lower propane-compartment door of the barbecue grill"
+        },
+        {
+          "short": "Side shelf (door)",
+          "prediction_index": 3,
+          "source": "Foldable barbecue side shelf on the sliding-door side"
+        },
+        {
+          "short": "Side shelf (trellis)",
+          "prediction_index": 4,
+          "source": "Foldable red-labeled barbecue side shelf on the trellis side"
+        }
+      ]
+    },
+    {
+      "scene_id": "car",
+      "display_name": "Car",
+      "endpoint_file": "car.txt",
+      "endpoint_sha256": "e69c5e76bc174057b111d5fd29b710cce9ec869bf90a3ec89428f3267903b43f",
+      "camera1_frame_range": [
+        1,
+        1155
+      ],
+      "semantic_source_sha256": "f4edeabf2e162bb4043166a2061ce009777ff1476027ab03d3b73cc53d3466eb",
+      "labels": [
+        {
+          "short": "Driver door 1",
+          "prediction_index": 0,
+          "source": "Camera-facing driver-side door, first opening episode"
+        },
+        {
+          "short": "Driver door 2",
+          "prediction_index": 1,
+          "source": "Camera-facing driver-side door, second opening episode"
+        },
+        {
+          "short": "Hood",
+          "prediction_index": 2,
+          "source": "Front hood"
+        },
+        {
+          "short": "Rear hatch",
+          "prediction_index": 3,
+          "source": "Rear liftback hatch/trunk lid"
+        }
+      ]
+    },
+    {
+      "scene_id": "kitchen1",
+      "display_name": "Kitchen 1",
+      "endpoint_file": "kitchen1.txt",
+      "endpoint_sha256": "9704f30f3470ef17f4a2eb98bfebc9724b09c61538b40b4d7a3bcae3b7abd5f1",
+      "camera1_frame_range": [
+        1,
+        2126
+      ],
+      "semantic_source_sha256": "dc5a00064783d89e6b758b407a3583e287504a9e795301e5fa08ce9a726e5a9d",
+      "labels": [
+        {
+          "short": "Fridge door",
+          "prediction_index": 0,
+          "source": "Main refrigerator door"
+        },
+        {
+          "short": "Dishwasher",
+          "prediction_index": 1,
+          "source": "Dishwasher door"
+        },
+        {
+          "short": "Oven door",
+          "prediction_index": 2,
+          "source": "Range oven door"
+        },
+        {
+          "short": "Pantry door",
+          "prediction_index": 3,
+          "source": "Tall pantry door immediately left of the refrigerator"
+        },
+        {
+          "short": "Upper cab. (toaster)",
+          "prediction_index": 4,
+          "source": "Left leaf of the upper double-door cupboard above the toaster-side counter"
+        },
+        {
+          "short": "Upper cab. (knife)",
+          "prediction_index": 7,
+          "source": "Second-opened leaf of the far-right upper cupboard above the knife-block counter"
+        },
+        {
+          "short": "Pressure-cooker lid",
+          "prediction_index": 8,
+          "source": "Black pressure cooker's removable lid"
+        },
+        {
+          "short": "Rice-cooker lid",
+          "prediction_index": 9,
+          "source": "Mint-green rice cooker hinged lid"
+        },
+        {
+          "short": "Air-fryer drawer",
+          "prediction_index": 10,
+          "source": "Black air-fryer cooking drawer"
+        }
+      ]
+    },
+    {
+      "scene_id": "flat2",
+      "display_name": "Flat 2",
+      "endpoint_file": "flat2.txt",
+      "endpoint_sha256": "fccdfcfd26f77166f78a304d7d77f441d329141c8111cf8f594fd44871e7c64a",
+      "camera1_frame_range": [
+        1,
+        2307
+      ],
+      "semantic_source_sha256": "f4f8fa7c2be2f01e42fa510d770af1a85f59a77dc83aee683dd22d30bc6672fa",
+      "labels": [
+        {
+          "short": "Coat closet",
+          "prediction_index": 0,
+          "source": "Entry coat-closet door"
+        },
+        {
+          "short": "Microwave",
+          "prediction_index": 1,
+          "source": "Over-range microwave door"
+        },
+        {
+          "short": "Oven",
+          "prediction_index": 2,
+          "source": "Range oven door"
+        },
+        {
+          "short": "Dishwasher",
+          "prediction_index": 3,
+          "source": "Dishwasher door"
+        },
+        {
+          "short": "Upper cabinet",
+          "prediction_index": 4,
+          "source": "Left hinged leaf of the two-door upper cabinet above the sink"
+        },
+        {
+          "short": "Kitchen drawer",
+          "prediction_index": 6,
+          "source": "Upper kitchen drawer immediately left of the refrigerator"
+        },
+        {
+          "short": "Fridge",
+          "prediction_index": 7,
+          "source": "Upper refrigerator door"
+        },
+        {
+          "short": "Freezer",
+          "prediction_index": 8,
+          "source": "Lower freezer door of the refrigerator"
+        },
+        {
+          "short": "Laundry closet",
+          "prediction_index": 9,
+          "source": "Laundry-closet door concealing the stacked washer and dryer"
+        }
+      ]
+    },
+    {
+      "scene_id": "flat1",
+      "display_name": "Flat 1",
+      "endpoint_file": "flat1.txt",
+      "endpoint_sha256": "f47782573b49652ffe689115856b7ddbbb5dec9d1209c39831a29efe0adf346f",
+      "camera1_frame_range": [
+        1,
+        1331
+      ],
+      "semantic_source_sha256": "e706c18a9956b7176f42869a6d26e9149afb1c0991006de75d2d81e1518a918e",
+      "labels": [
+        {
+          "short": "Coat-closet leaf",
+          "prediction_index": 0,
+          "source": "Entry coat closet — first-opened (left-side) door leaf"
+        },
+        {
+          "short": "Laundry-closet leaf",
+          "prediction_index": 2,
+          "source": "Laundry closet — first-opened (left-side) door leaf"
+        },
+        {
+          "short": "Fridge",
+          "prediction_index": 4,
+          "source": "Integrated refrigerator door"
+        },
+        {
+          "short": "Spice cabinet",
+          "prediction_index": 5,
+          "source": "Upper kitchen spice-cabinet door"
+        },
+        {
+          "short": "Utensil drawer",
+          "prediction_index": 6,
+          "source": "Wide kitchen utensil drawer beside the oven"
+        }
+      ]
+    },
+    {
+      "scene_id": "flat3",
+      "display_name": "Flat 3",
+      "endpoint_file": "flat3.txt",
+      "endpoint_sha256": "a1cbe253aec6f2758f21a1552df2f2fed1a358ba79097301f461c481d2220cb4",
+      "camera1_frame_range": [
+        1,
+        2115
+      ],
+      "semantic_source_sha256": "ab24cd77cca87e209682fee0d30aa5cce9601b94943fe7f1338417a520c76991",
+      "labels": [
+        {
+          "short": "Freezer",
+          "prediction_index": 0,
+          "source": "Upper freezer door of the refrigerator"
+        },
+        {
+          "short": "Microwave",
+          "prediction_index": 1,
+          "source": "Microwave door"
+        },
+        {
+          "short": "Utensil drawer",
+          "prediction_index": 2,
+          "source": "Top utensil drawer beside the stove"
+        },
+        {
+          "short": "Dish cabinet",
+          "prediction_index": 3,
+          "source": "Narrow upper dish-cabinet door beside the range hood"
+        },
+        {
+          "short": "Pantry cabinet",
+          "prediction_index": 4,
+          "source": "Upper pantry-cabinet door left of the range hood"
+        },
+        {
+          "short": "Utility closet",
+          "prediction_index": 5,
+          "source": "Utility closet door near the kitchen entrance"
+        },
+        {
+          "short": "Laundry closet",
+          "prediction_index": 6,
+          "source": "Laundry closet door enclosing the stacked washer and dryer"
+        },
+        {
+          "short": "Passage door",
+          "prediction_index": 7,
+          "source": "Hinged passage door between the living room and bedroom"
+        },
+        {
+          "short": "Bedroom closet",
+          "prediction_index": 8,
+          "source": "Bedroom clothes-closet door"
+        }
+      ]
+    },
+    {
+      "scene_id": "kitchen2",
+      "display_name": "Kitchen 2",
+      "endpoint_file": "kitchen2.txt",
+      "endpoint_sha256": "01f2362f6c124c1aebb3698a83e78d4552b9bb346e6e4c8098a537517b258ee7",
+      "camera1_frame_range": [
+        1,
+        867
+      ],
+      "semantic_source_sha256": "5ec239adf0ed6415109981a727f681b09806e54d9485624e447676d0c5cf44cd",
+      "labels": [
+        {
+          "short": "Left drawer",
+          "prediction_index": 0,
+          "source": "Wide upper base-cabinet drawer immediately left of the stove"
+        },
+        {
+          "short": "Upper cabinet door",
+          "prediction_index": 1,
+          "source": "Left-hinged door of the upper cabinet above the range hood"
+        },
+        {
+          "short": "Right drawer",
+          "prediction_index": 3,
+          "source": "Upper base-cabinet drawer immediately right of the stove, beneath the countertop appliance"
+        }
+      ]
+    },
+    {
+      "scene_id": "oslo",
+      "display_name": "Oslo",
+      "endpoint_file": "oslo.txt",
+      "endpoint_sha256": "4f6f2b60cfa2a291f5dde3b3d2dca461524a1b29bb7a8f45293db3d757adcb9d",
+      "camera1_frame_range": [
+        1,
+        683
+      ],
+      "semantic_source_sha256": "faec07e99f9c8a9b5daed197af43733b8f935039f6bb7c18af4184e61f240a8f",
+      "labels": [
+        {
+          "short": "Fridge",
+          "prediction_index": 0,
+          "source": "Upper integrated refrigerator door"
+        },
+        {
+          "short": "Freezer",
+          "prediction_index": 1,
+          "source": "Lower integrated freezer door"
+        },
+        {
+          "short": "Dishwasher",
+          "prediction_index": 2,
+          "source": "Integrated dishwasher door"
+        }
+      ]
+    },
+    {
+      "scene_id": "chair",
+      "display_name": "Chair",
+      "endpoint_file": "chair.txt",
+      "endpoint_sha256": "1576457b571a05d21a4892247b4c4f1ae495a41b5e8deccd1d564f9124453d02",
+      "camera1_frame_range": [
+        1,
+        756
+      ],
+      "semantic_source_sha256": "3f072f906a5a3bac226db084ea72b9a3d4db2ec37af89a06b28575a188257a99",
+      "labels": [
+        {
+          "short": "Green chair (door)",
+          "prediction_index": 0,
+          "source": "Dark green folding camping chair in the wall corner near the doorway"
+        },
+        {
+          "short": "Green chair (window)",
+          "prediction_index": 1,
+          "source": "Second dark green folding camping chair in the corner beside the desk and window"
+        },
+        {
+          "short": "Blue chair",
+          "prediction_index": 2,
+          "source": "Blue folding camping chair in the window-side corner near the desk"
+        }
+      ]
+    },
+    {
+      "scene_id": "m_kitchen1",
+      "display_name": "M Kitchen 1",
+      "endpoint_file": "m_kitchen1.txt",
+      "endpoint_sha256": "a2d56832a0d2c2f07d509b39954277e853654771b46aba909a6737947aa4f09f",
+      "camera1_frame_range": [
+        1,
+        533
+      ],
+      "semantic_source_sha256": "6999cc6c6ae169780c3b45d643ab1425fe52d6bfd22a38ec5974969fd813273b",
+      "labels": [
+        {
+          "short": "Upper cabinet door",
+          "prediction_index": 0,
+          "source": "Right-hand door of the two-door upper cabinet above the refrigerator (the first door opened)"
+        },
+        {
+          "short": "Food drawer (left)",
+          "prediction_index": 2,
+          "source": "Upper food-storage drawer in the base cabinet immediately left of the stove/oven"
+        },
+        {
+          "short": "Utensil drawer (right)",
+          "prediction_index": 3,
+          "source": "Upper utensil and cutting-board drawer in the base cabinet immediately right of the stove/oven"
+        }
+      ]
+    },
+    {
+      "scene_id": "m_kitchen2",
+      "display_name": "M Kitchen 2",
+      "endpoint_file": "m_kitchen2.txt",
+      "endpoint_sha256": "55dbe884e2b651341269114a30ef5453bb5dec52c19b348892950c2d8b8ed2f5",
+      "camera1_frame_range": [
+        1,
+        686
+      ],
+      "semantic_source_sha256": "5c6c4518d1584a8eb6470ed1bd30061e319e9169c13082572023f5279f4a1c50",
+      "labels": [
+        {
+          "short": "Fridge",
+          "prediction_index": 0,
+          "source": "Main upper refrigerator door"
+        },
+        {
+          "short": "Upper cabinet leaf",
+          "prediction_index": 2,
+          "source": "Second door leaf of the two-door upper cabinet above the cooktop/range hood"
+        },
+        {
+          "short": "Top drawer",
+          "prediction_index": 3,
+          "source": "Top drawer of the narrow drawer stack immediately right of the oven"
+        }
+      ]
+    },
+    {
+      "scene_id": "m_kitchen3",
+      "display_name": "M Kitchen 3",
+      "endpoint_file": "m_kitchen3.txt",
+      "endpoint_sha256": "2291930073c12e37c9991233358cfcf5ec506c6bdd46657a2fb2d026ce036894",
+      "camera1_frame_range": [
+        1,
+        824
+      ],
+      "semantic_source_sha256": "bf3d807690266945ae2aefb2d133d3c608ac92755f391b52fd93e604bfa78f7d",
+      "labels": [
+        {
+          "short": "Fridge",
+          "prediction_index": 0,
+          "source": "Main refrigerator door"
+        },
+        {
+          "short": "Upper cabinet leaf",
+          "prediction_index": 2,
+          "source": "Viewer-right hinged leaf of the double-door upper cabinet over the cooktop/range hood"
+        },
+        {
+          "short": "Top drawer",
+          "prediction_index": 3,
+          "source": "Top drawer of the narrow base cabinet immediately to the right of the oven"
+        }
+      ]
+    }
+  ]
+}

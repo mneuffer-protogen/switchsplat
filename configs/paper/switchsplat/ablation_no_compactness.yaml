@@ -1,0 +1,10 @@
+# @package _global_
+# Ablation of the SwitchSplat paper (Kitchen 2): without the compactness loss.
+
+defaults:
+  - /apps/colmap_switchsplat
+  - _self_
+
+loss:
+  use_slot_spatial_conc: false
+  lambda_slot_spatial_conc: 0.0

@@ -1,0 +1,15 @@
+SwitchSplat
+Copyright (c) 2026 The SwitchSplat Authors
+
+This repository is a derivative of:
+
+- 3DGRUT (3D Gaussian Ray Tracing and 3D Gaussian Unscented Transform),
+  https://github.com/nv-tlabs/3dgrut, commit a37ef72,
+  Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES, Apache License 2.0.
+- FullCircle, https://github.com/theialab/fullcircle, Apache License 2.0.
+
+Files that originate from 3DGRUT keep NVIDIA's copyright header. The SwitchSplat
+authors changed some of them; CHANGELOG.md lists every changed file. Files written
+for SwitchSplat carry "Copyright (c) 2026 The SwitchSplat Authors".
+
+Third-party components and their licenses are listed in ATTRIBUTIONS.md.

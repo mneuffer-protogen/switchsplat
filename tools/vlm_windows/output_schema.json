@@ -1,0 +1,90 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "number"
+          },
+          "event_index": {
+            "type": "integer"
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "frame": {
+                  "type": "integer"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "state": {
+                  "enum": [
+                    "off",
+                    "on",
+                    "transition",
+                    "unclear"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "frame",
+                "state",
+                "note"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "object_description": {
+            "type": "string"
+          },
+          "off_frame": {
+            "type": "integer"
+          },
+          "on_frame": {
+            "type": "integer"
+          },
+          "uncertainty_reason": {
+            "enum": [
+              "none",
+              "occlusion",
+              "motion_blur",
+              "object_not_visible",
+              "ambiguous_state",
+              "insufficient_evidence"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_index",
+          "object_description",
+          "on_frame",
+          "off_frame",
+          "confidence",
+          "uncertainty_reason",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "scene_description": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "scene_description",
+    "events",
+    "notes"
+  ],
+  "type": "object"
+}

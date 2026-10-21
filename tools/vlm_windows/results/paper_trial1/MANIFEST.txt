@@ -1,0 +1,33 @@
+SwitchSplat VLM interaction windows used by every paper experiment
+
+These 12 files are byte-identical to <scene>/vlm_prediction.txt in the public SwitchSplat
+dataset (the pinhole and fisheye copies are identical).
+
+rollout:          GPT-5.6 Sol through Codex CLI 0.148.0, reasoning effort max, trial 1
+                  (raw answers: results/gpt-5.6-sol/max/trial1/<scene>/raw_observation.json)
+which rollout:    the first max-effort rollout. When these files were exported (2026-08-21)
+                  three max-effort rollouts existed and trial 1 agreed best with the annotated
+                  interaction times; trials 4-10 were run on 2026-08-23. Of all ten max-effort
+                  rollouts it is still the most accurate: 59/59 annotated windows matched,
+                  0 extras, 0 misses, endpoint MAE 2.559 frames.
+post-processing:  postprocess.py defaults: drop windows shorter than 20 frames, then
+                  confidence-ranked temporal NMS at IoU 0.8
+evaluation:       results/gpt-5.6-sol/max/trial1/evaluation_min20_nms_iou80.json
+                  (sha256 of the original file, before paths were removed:
+                  b31f0ebb15110c8627bb5e40f3fb235884a45309d0e8e202b5348848d92c53cc)
+input:            camera1 frames, every 8th frame plus the first and last
+format:           one "on_frame off_frame" pair per line, like interaction_times.txt
+
+sha256 of each file:
+a895ea726fb656a4896bb744271caa13e0956333e2e04fd582dd2ee28f35a78d  balcony/vlm_prediction.txt
+607aeb3c341df697038f9563523085c531cbb15bdee722232d7247a496e1bb08  car/vlm_prediction.txt
+d47b1ee7a9c5d39f9f1e8b2f0a3c6e54f3c5bc8a0c261430a737331906519c40  kitchen1/vlm_prediction.txt
+c79923176191065079f1c3119ff0bec9d20f0a966773d63158ee0874ac362a22  flat1/vlm_prediction.txt
+fb6523a3fa597717101781fe5702afbabfb90ce3933301ed3be3f5c043ef6086  flat2/vlm_prediction.txt
+1cd274bd1000ed8e88595eab5ee4106e54fcd0d3107b98e3b02aaf2abfa10c32  flat3/vlm_prediction.txt
+e33ceaa376e263a3ec8c34033dbca48e2fa39871b8b65b4c8d599dd4baa5127a  chair/vlm_prediction.txt
+f616d61c6cfdef5342da477910ed9d7ede6a48b5c918a3e10f5b2be7b6a8abf3  m_kitchen1/vlm_prediction.txt
+bd84f3aff73648b915e2c942bad2f4a9abcebfe665f21ba8eb26dd72f907b739  m_kitchen2/vlm_prediction.txt
+27b0e61f2064a70a272b1877e5bb813446b1abb18a429529db9b98b4ca8966ce  m_kitchen3/vlm_prediction.txt
+0a5c18a6cdad200618a3c579e77dcebb3d02f3c730f56a1960c31f05d9c2841c  kitchen2/vlm_prediction.txt
+9a1e6c97a3460a04edf3d4f68dd67d0824dd296f0a6edf12c62f7edc392171c1  oslo/vlm_prediction.txt

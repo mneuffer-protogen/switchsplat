@@ -1,0 +1,10 @@
+# @package _global_
+# Ablation of the SwitchSplat paper (Kitchen 2): without the sparsity loss.
+
+defaults:
+  - /apps/colmap_switchsplat
+  - _self_
+
+loss:
+  use_mode_a: false
+  lambda_mode_a: 0.0

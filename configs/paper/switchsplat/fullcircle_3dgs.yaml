@@ -1,0 +1,35 @@
+# @package _global_
+# FullCircle (3DGS) baseline of the SwitchSplat paper (Table 1): FullCircle trained on the SwitchSplat
+# scenes with the same data protocol as SwitchSplat (pinhole frames at half resolution, the
+# scene's test_frames.txt, capturer masks dilated by 20 px, batch 4, 30k iterations), without
+# object slots.
+
+defaults:
+  - /base_gs
+  - /dataset: colmap_fc
+  - /initialization: colmap
+  - /render: gsplat_3dgs
+  - _self_
+
+num_workers: 0
+batch_size: 4
+n_iterations: 30000
+test_last: true
+val_frequency: 999999
+
+dataset:
+  downsample_factor: 2
+  preload_train_data: true
+  test_frame_suffix: null
+  test_frames_file: test_frames.txt
+  fullcircle:
+    fisheye_valid_mask: ""
+    fisheye_valid_mask_tripod: ""
+    distractor_mask_dilation: 20
+    distractor_mask_white_is_valid: false
+
+loss:
+  use_mode_a: false
+  lambda_mode_a: 0.0
+  use_slot_spatial_conc: false
+  lambda_slot_spatial_conc: 0.0

@@ -1,0 +1,6 @@
+# The repository-wide "results/" rule would hide the recorded rollouts.
+!results/
+
+# Rendered figures and locally supplied fonts.
+figures/out/
+figures/fonts/
