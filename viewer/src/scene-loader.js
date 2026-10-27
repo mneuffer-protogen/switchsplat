@@ -15,7 +15,7 @@ import {buildContacts} from './contact.js';
 import {fitObb,trimmedBounds} from './obb.js';
 import {JointedPart,HINGE,SLIDER} from './joint.js';
 import {DEG} from './math.js';
-import {setFade} from './fade.js';
+import {setFade,fadeLevels} from './fade.js';
 
 const DEFAULTS={friction:1.5,frictionTorque:0,mass:2,latchDeg:3};
 
@@ -160,7 +160,7 @@ export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},ma
  const parts=[];
  for(const {p,body,reveal,vanish} of partRes){
   const group=new THREE.Group();group.name=p.id;root.add(group);
-  const part={id:p.id,name:p.name??p.id,data:p,group,mesh:body?.mesh??null,joint:null,proxy:null,outline:null,reveal:null,vanish:null,fit:p.joint?.fit??null,interactive:false,obb:null,contacts:null,merged:Array.isArray(p.merged)&&p.merged.length?p.merged:null};
+  const part={id:p.id,name:p.name??p.id,data:p,group,mesh:body?.mesh??null,joint:null,proxy:null,outline:null,reveal:null,vanish:null,fit:p.joint?.fit??null,fade:p.joint?.fade??null,interactive:false,obb:null,contacts:null,merged:Array.isArray(p.merged)&&p.merged.length?p.merged:null};
   part.lowFit=part.fit?.inlierRatio!=null&&part.fit.inlierRatio<.6;
   if(body){body.mesh.name=`${p.id}:part`;group.add(body.mesh)}
   for(const [k,r] of [['reveal',reveal],['vanish',vanish]])if(r){r.mesh.name=`${p.id}:${k}`;root.add(r.mesh);part[k]=r.mesh}
@@ -199,8 +199,9 @@ export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},ma
   updateFades(){
    for(const p of parts){
     if(!p.joint)continue;const f=p.joint.fraction;
-    if(p.reveal)setFade(p.reveal,f);
-    if(p.vanish)setFade(p.vanish,1-f);
+    const l=fadeLevels(f,p.fade);
+    if(p.reveal)setFade(p.reveal,l.reveal);
+    if(p.vanish)setFade(p.vanish,l.vanish);
    }
   },
   // Frees what the scene owns on the GPU: every SplatMesh's packed splats and the per-part outline/proxy materials.
