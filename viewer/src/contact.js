@@ -3,6 +3,9 @@
 // not the oriented box: on a sparse real scan the box is metres wide (floaters stretch it) and would grab or push
 // from half a metre away. The box stays only as the hover outline and the joint's mass estimate.
 //
+// Units: radii and distances in this file's API are real-world metres; the points, the joint's frame and the `local`
+// arguments are in export units, so each query converts with joint.unit (metres per export unit).
+//
 // Everything here is O(points of one part) at load and O(1)-ish per query; nothing touches the static scene's splats.
 import * as THREE from 'three';
 import {eigenSym3,fitObb} from './obb.js';
@@ -83,7 +86,8 @@ export class ContactSet{
   const {values,vectors}=n>=4?eigenSym3(c):{values:[1,1,1],vectors:[new THREE.Vector3(1,0,0),new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1)]};
   this.thinAxis=vectors[2].clone().normalize();
   this.thinRatio=values[2]/Math.max(values[1],1e-12);
-  this.thinReliable=this.thinRatio<=FILTER.illDefinedRatio;
+  // (a cloud with no spread in two directions, a line, has no sheet either)
+  this.thinReliable=this.thinRatio<=FILTER.illDefinedRatio&&values[1]>1e-6;
  }
  point(i,out=new THREE.Vector3()){return out.set(this.points[i*3],this.points[i*3+1],this.points[i*3+2])}
  // Nearest centre to p within `radius`: {index, distance} (a reused object) or null.
@@ -121,21 +125,22 @@ export function buildContacts(parsed,opts){
 }
 
 const _r=new THREE.Vector3();
-// How close the world-space (joint-frame) point is to the part's surface, or Infinity beyond maxD.
+// How close a point (joint frame, export units) is to the part's surface in metres, or Infinity beyond maxD metres.
 export function contactDistance(part,local,maxD=GRAB_RADIUS){
  const c=part.contacts,j=part.joint;if(!c||!j)return Infinity;
- return c.distance(j.toRest(local,j.q,_r),maxD);
+ return c.distance(j.toRest(local,j.q,_r),maxD/j.unit)*j.unit;
 }
 
 // Nearest part (and its distance) to a point in the joint's frame, over every part with contacts.
 export function nearestPart(parts,local,maxD=GRAB_RADIUS){
- let best=null,bd=maxD;
+ let best=null,bd=maxD;// metres
  for(const p of parts){if(!p.interactive||!p.contacts)continue;const d=contactDistance(p,local,bd);if(d<=bd){best=p;bd=d}}
  return best?{part:best,distance:bd}:null;
 }
 
 const _o=new THREE.Vector3(),_d=new THREE.Vector3(),_rq=new THREE.Quaternion(),_ray={index:-1,t:0,point:new THREE.Vector3()};
-// A ray in the joint's frame against every part's centres: {part, point (joint frame), distance} for the nearest.
+// A ray in the joint's frame against every part's centres: {part, point (joint frame), distance (metres)} for the
+// nearest. `radius` and `maxDist` are metres.
 export function pickParts(parts,origin,dir,radius=PICK_RADIUS,maxDist=Infinity){
  let best=null,bt=maxDist;
  for(const p of parts){
@@ -144,8 +149,8 @@ export function pickParts(parts,origin,dir,radius=PICK_RADIUS,maxDist=Infinity){
   _o.copy(origin);_d.copy(dir);
   if(j.kind==='hinge'){j.toRest(_o,j.q,_o);_d.applyQuaternion(_rq.setFromAxisAngle(j.axis,-j.q))}
   else j.toRest(_o,j.q,_o);
-  const h=c.rayHit(_o,_d,radius,bt,_ray);
-  if(h){bt=h.t;best={part:p,point:j.pointAt(h.point,j.q,new THREE.Vector3()),distance:h.t}}
+  const h=c.rayHit(_o,_d,radius/j.unit,bt/j.unit,_ray);
+  if(h){bt=h.t*j.unit;best={part:p,point:j.pointAt(h.point,j.q,new THREE.Vector3()),distance:bt}}
  }
  return best;
 }

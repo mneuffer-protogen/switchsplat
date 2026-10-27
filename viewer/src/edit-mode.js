@@ -91,6 +91,8 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
   refreshVisibility();
  };
  const modeCtl=gui.add(state,'mode',['translate','rotate']).name('gizmo').onChange(m=>transform.setMode(m));
+ // The scene's scale: metres per export unit (COLMAP exports are unscaled). Everything in the file stays in export units.
+ gui.add({mpu:loaded.metresPerUnit},'mpu',.01,10,.001).name('metres per unit').onChange(v=>loaded.setScale(v));
  gui.add({download(){download(loaded,jointed)}},'download').name('Download scene.json');
 
  transform.addEventListener('dragging-changed',e=>{state.dragging=e.value;controls.enabled=!e.value});
@@ -121,6 +123,8 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
   // Keep the scrub slider following the part while it moves.
   update(){
    if(!state.enabled)return;
+   // The pivot markers are drawn at a fixed real size, whatever the scale of the root they sit in.
+   for(const r of rows.values())r.helper.scale.setScalar(1/root.scale.x);
    for(const [p,r] of rows){const u=p.joint.kind===HINGE?1/DEG:1;r.s.q=p.joint.q*u;if(r.s.locked!==p.joint.locked){r.s.locked=p.joint.locked;r.ctl.locked.updateDisplay()}}
    const r=state.selected&&rows.get(state.selected);if(r)r.scrub.updateDisplay();
   },
@@ -131,6 +135,7 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
 
 export function buildExport(loaded,jointed=loaded.parts.filter(p=>p.joint)){
  const out=JSON.parse(JSON.stringify(loaded.data));
+ if(loaded.metresPerUnit!==1||loaded.data.metresPerUnit!==undefined)out.metresPerUnit=loaded.metresPerUnit;
  for(const part of jointed){
   const i=loaded.parts.indexOf(part);
   out.parts[i].joint=jointToJson(part.joint,loaded.data.parts[i].joint);

@@ -29,12 +29,19 @@ export class FixedStepper{
  }
 }
 
+// Units. The joint works in the export's own units (scene coordinates, `q` of a slider, the box, the pivot).
+// `unit` is metres per export unit (scene.json metresPerUnit): the dynamics are tuned in metres (Alyx: 4 m/s,
+// 450 N, kilograms), so the places where a length, a linear speed or a mass meets the joint's own numbers convert
+// with it. A hinge angle is the same in any units; a slider's q, its speed and its inertia are not:
+//   generalised mass   hinge: I from the box in metres (kg m^2)     slider: m * unit^2   (energy 1/2 m (unit*qd)^2)
+//   generalised force  hinge: N m                                    slider: N * unit
+// and every speed cap given in m/s for a slide is divided by `unit`. With unit = 1 nothing changes.
 export class JointedPart{
  // `box` is the part's bounding box at rest in the joint's frame ({center,size,quaternion}); it only
  // sizes the generalised mass. `object` (optional) is the Object3D posed by applyPose; its pose when
  // given is the rest pose (q = 0).
- constructor({object=null,kind=HINGE,axis,pivot=new THREE.Vector3(),min=0,max=1,open=max,friction=0,frictionTorque=0,spring=0,damper=0,rest=0,latch=0,maxSpeed=0,mass=2,box=null,activateAt=.9,deactivateAt=.1,locked=false,latchReleaseDelay=.25}={}){
-  Object.assign(this,{object,kind,min,max,open,friction,frictionTorque,spring,damper,rest,latch,maxSpeed,bodyMass:mass,activateAt,deactivateAt,latchReleaseDelay});
+ constructor({object=null,kind=HINGE,axis,pivot=new THREE.Vector3(),min=0,max=1,open=max,friction=0,frictionTorque=0,spring=0,damper=0,rest=0,latch=0,maxSpeed=0,mass=2,box=null,activateAt=.9,deactivateAt=.1,locked=false,latchReleaseDelay=.25,unit=1}={}){
+  Object.assign(this,{unit,object,kind,min,max,open,friction,frictionTorque,spring,damper,rest,latch,maxSpeed,bodyMass:mass,activateAt,deactivateAt,latchReleaseDelay});
   this.axis=new THREE.Vector3().copy(axis).normalize();this.pivot=new THREE.Vector3().copy(pivot);
   this.box=box?{center:box.center.clone(),size:box.size.clone(),quaternion:(box.quaternion??new THREE.Quaternion()).clone()}:{center:this.pivot.clone(),size:new THREE.Vector3(.4,.4,.4),quaternion:new THREE.Quaternion()};
   this.restPosition=object?object.position.clone():new THREE.Vector3();
@@ -50,11 +57,11 @@ export class JointedPart{
  // about its own centre with the principal inertias below; the parallel-axis theorem moves that to
  // the pivot line.
  generalizedMass(){
-  const m=this.bodyMass;if(this.kind===SLIDER)return Math.max(1e-3,m);
-  const {center,size,quaternion}=this.box;
+  const m=this.bodyMass,u=this.unit;if(this.kind===SLIDER)return Math.max(1e-3,m*u*u);
+  const {quaternion}=this.box,size=this.box.size.clone().multiplyScalar(u),center=this.box.center.clone().multiplyScalar(u),pivot=this.pivot.clone().multiplyScalar(u);
   const Ix=m/12*(size.y*size.y+size.z*size.z),Iy=m/12*(size.x*size.x+size.z*size.z),Iz=m/12*(size.x*size.x+size.y*size.y);
   const la=this.axis.clone().applyQuaternion(quaternion.clone().invert());
-  const d=center.clone().sub(this.pivot),dPerp=d.addScaledVector(this.axis,-d.dot(this.axis));
+  const d=center.sub(pivot),dPerp=d.addScaledVector(this.axis,-d.dot(this.axis));
   return Math.max(1e-4,la.x*la.x*Ix+la.y*la.y*Iy+la.z*la.z*Iz+m*dPerp.lengthSq());
  }
  // The part's farthest point from the hinge line (metres): how far its free edge travels per radian.
@@ -85,10 +92,15 @@ export class JointedPart{
  // The coordinate a click closes to / opens to.
  get closedQ(){return clamp(0,this.min,this.max)}
  get openQ(){return clamp(this.open,this.min,this.max)}
- get tolerance(){return this.kind===HINGE?.02*DEG:1e-4}
+ get tolerance(){return this.kind===HINGE?.02*DEG:1e-4/this.unit}
+ // A speed given in metres per second (rad/s for a hinge) as the joint's q-speed.
+ qSpeed(v){return this.kind===HINGE?v:v/this.unit}
+ // The speed cap of a pushed part in q-speed (Infinity for none).
+ get qMaxSpeed(){return this.maxSpeed>0?this.qSpeed(this.maxSpeed):Infinity}
+ setUnit(u){this.unit=u;this.mass=this.generalizedMass();this.refreshLimits()}
  setLimits(lo,hi){this.lo=lo;this.hi=hi}
  // How far past the latch's end stop it is held; a hair, so the part cannot be pushed out.
- get latchHold(){return this.kind===HINGE?.01*DEG:1e-4}
+ get latchHold(){return this.kind===HINGE?.01*DEG:1e-4/this.unit}
  // The limits the state implies: pinned where it stands when locked, at the closed stop when latched.
  refreshLimits(){
   if(this.locked)this.setLimits(this.q,this.q+this.latchHold);
@@ -115,16 +127,16 @@ export class JointedPart{
  }
  jiggleOffset(){
   const j=this.jig;if(!j)return 0;
-  return (this.kind===HINGE?JIGGLE_DEG*DEG:JIGGLE_M)*Math.sin(2*Math.PI*JIGGLE_HZ*j.t)*Math.exp(-j.t/JIGGLE_TAU);
+  return (this.kind===HINGE?JIGGLE_DEG*DEG:JIGGLE_M/this.unit)*Math.sin(2*Math.PI*JIGGLE_HZ*j.t)*Math.exp(-j.t/JIGGLE_TAU);
  }
  // The closing speed above which a part latching at its stop counts as a slam.
- get slamSpeed(){return this.kind===HINGE?1.5:.5}
+ get slamSpeed(){return this.qSpeed(this.kind===HINGE?1.5:.5)}
  // Whatever was driving the part (a click animation) lets go of it; a push or a grab does this.
  interrupt(){this.anim=null}
  // Settling time (s) of a click animation for this part: a car door takes about 0.9 s, a cabinet door 0.6,
  // a drawer 0.45; sized by how far the free edge travels and a little by the mass.
  responseFor(target){
-  const d=Math.abs(clamp(target,this.min,this.max)-this.q),arc=this.kind===HINGE?this.reach*d:d;
+  const d=Math.abs(clamp(target,this.min,this.max)-this.q),arc=(this.kind===HINGE?this.reach*d:d)*this.unit;
   return clamp(.15+.55*arc+.02*Math.sqrt(this.bodyMass),.3,1.4);
  }
 
@@ -170,7 +182,7 @@ export class JointedPart{
  // A part pushed (not held) goes no faster than `maxSpeed` (m/s along a slide, rad/s about a hinge; 0 = no limit).
  limitSpeed(qd){
   if(this.held||!(this.maxSpeed>0))return qd;
-  return clamp(qd,-this.maxSpeed,this.maxSpeed);
+  const cap=this.qMaxSpeed;return clamp(qd,-cap,cap);
  }
  // A critically damped drive to coordinate `q` (click to open/close). `response` is its settling time in
  // seconds (default .5; `style:'swing'` sizes it by the part, see responseFor). It is the same implicit
@@ -189,7 +201,7 @@ export class JointedPart{
   const r=Math.max(.05,response??(swing?this.responseFor(target):.5));
   this.anim={target,response:r,time:0};
   if(swing&&Math.abs(delta)>this.tolerance*4){
-   const dir=Math.sign(delta),w=2*Math.PI/r,v=dir*Math.min(kick*w*Math.abs(delta),this.maxSpeed>0?this.maxSpeed:Infinity);
+   const dir=Math.sign(delta),w=2*Math.PI/r,v=dir*Math.min(kick*w*Math.abs(delta),this.qMaxSpeed);
    if(v*dir>this.qd*dir)this.qd=v;
   }
  }
@@ -198,16 +210,17 @@ export class JointedPart{
  // mass the part really has along its one motion, so it cannot overshoot (Unity ConstrainedImpulse:
  // a spring sized by total mass made light doors oscillate at tens of rad/s).
  drag(anchor,target,dt,{constrainedFollow=.35,constrainedMaxSpeed=4,constrainedDriveMaxForce=450}={}){
-  const maxImpulse=constrainedDriveMaxForce*dt;
+  // Positions and the wanted speed are in export units; the force, speed cap and lever are metric.
+  const u=this.unit,maxImpulse=constrainedDriveMaxForce*dt;
   const vWant=target.clone().sub(anchor).multiplyScalar(constrainedFollow/dt);
-  if(vWant.length()>constrainedMaxSpeed)vWant.setLength(constrainedMaxSpeed);
+  if(vWant.length()*u>constrainedMaxSpeed)vWant.setLength(constrainedMaxSpeed/u);
   if(this.kind===HINGE){
    const r=anchor.clone().sub(this.pivot),rPerp=r.addScaledVector(this.axis,-r.dot(this.axis)),lever=rPerp.length();
-   if(lever<.01)return;// held on the axis itself: pulling cannot turn it
+   if(lever*u<.01)return;// held on the axis itself: pulling cannot turn it
    const tangent=new THREE.Vector3().crossVectors(this.axis,rPerp).divideScalar(lever);
    const impulse=this.mass*(vWant.dot(tangent)/lever-this.qd);
-   this.applyImpulse(clamp(impulse,-maxImpulse*lever,maxImpulse*lever));
-  }else this.applyImpulse(clamp(this.mass*(vWant.dot(this.axis)-this.qd),-maxImpulse,maxImpulse));
+   this.applyImpulse(clamp(impulse,-maxImpulse*lever*u,maxImpulse*lever*u));
+  }else this.applyImpulse(clamp(this.mass*(vWant.dot(this.axis)-this.qd),-maxImpulse*u,maxImpulse*u));
  }
 
  // ---------------------------------------------------------------- step
@@ -219,7 +232,7 @@ export class JointedPart{
   // The latch waits while a click animation is still driving the part, so it never snaps the last degrees.
   // A part that arrives fast (a slam) has stopped dead against its end stop by the next step and latches then.
   if(this.latch>0&&!this.locked){
-   if(!this.latched&&!this.held&&!this.anim&&this.q-this.min<this.latch&&Math.abs(this.qd)<1.5){
+   if(!this.latched&&!this.held&&!this.anim&&this.q-this.min<this.latch&&Math.abs(this.qd)<this.qSpeed(1.5)){
     const hit=this.hitSpeed;this.hitSpeed=0;
     this.latched=true;this.refreshLimits();this.emit('latched');
     if(hit>this.slamSpeed)this.emit('slam',hit);
@@ -248,7 +261,7 @@ export class JointedPart{
    if(this.spring>0)qd=(qd-dt*this.spring/M*(this.q-this.rest))/(1+dt*this.damper/M+dt*dt*this.spring/M);
    if(this.friction>0)qd/=1+dt*this.friction;
    // Coulomb friction at the joint (a zero-speed motor with a torque cap): stops a swinging frame.
-   if(this.frictionTorque>0){const dq=this.frictionTorque*dt/M;qd=Math.abs(qd)<=dq?0:qd-Math.sign(qd)*dq}
+   if(this.frictionTorque>0){const dq=this.frictionTorque*(this.kind===SLIDER?this.unit:1)*dt/M;qd=Math.abs(qd)<=dq?0:qd-Math.sign(qd)*dq}
    qd=this.limitSpeed(qd);
   }
   const next=this.q+qd*dt;

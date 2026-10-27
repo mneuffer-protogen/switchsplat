@@ -77,7 +77,7 @@ export function createXrInput({renderer,scene,root,getParts,tune,onSelect=()=>{}
   // The pointing ray against the contact splats (in the joint's frame), and the boxes of parts that have none.
   _inv.copy(root.matrixWorld).invert();
   _ro.copy(raycaster.ray.origin).applyMatrix4(_inv);_rd.copy(raycaster.ray.direction).transformDirection(_inv);
-  let hit=pickParts(getParts(),_ro,_rd,AIM_RADIUS,6);
+  let hit=pickParts(getParts(),_ro,_rd,AIM_RADIUS,6);// metres
   const proxies=getParts().filter(p=>p.interactive&&p.proxy&&!p.contacts).map(p=>p.proxy);
   for(const p of proxies)p.updateWorldMatrix(true,false);
   const box=proxies.length?raycaster.intersectObjects(proxies,false)[0]:null;
@@ -157,7 +157,7 @@ export function createXrInput({renderer,scene,root,getParts,tune,onSelect=()=>{}
    const k=smoothing(16,dt),shown=new Set();
    for(const h of hands){
     if(!h.source){h.motion.reset();continue}
-    refresh(h);h.motion.update(h.local,dt);
+    refresh(h);h.motion.maxSpeed=8/root.scale.x;h.motion.update(h.local,dt);
     // The sphere glows while it touches a part.
     const m=h.collider.material;m.opacity+=((h.touching.size?HIT_OPACITY:IDLE_OPACITY)-m.opacity)*k;
     m.color.setHex(h.touching.size?HIT_COLOR:IDLE_COLOR);

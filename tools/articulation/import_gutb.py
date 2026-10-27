@@ -450,7 +450,8 @@ def demote_ground(logits: np.ndarray, positions: np.ndarray, slot_mask: np.ndarr
 
 def import_gutb(path: Path, out: Path, *, manifest_js: Path | None = None, scene_id: str | None = None,
                 min_confidence: float = 0.6, sh_degree: int | None = None, name: str | None = None,
-                up=None, ground_margin: float | None = None, verbose: bool = True) -> dict:
+                up=None, ground_margin: float | None = None, metres_per_unit: float | None = None,
+                verbose: bool = True) -> dict:
     """Decode, split by state, write the export directory and return the scene.json dictionary.
 
     ``ground_margin`` (same units as the scene; default: 1.25 x the ground layer's thickness, at least 3 % of the
@@ -498,6 +499,9 @@ def import_gutb(path: Path, out: Path, *, manifest_js: Path | None = None, scene
                          "target": [round(float(x), 5) for x in camera["target"]]}
     if floor is not None:
         scene["floor"] = [round(float(x), 5) for x in floor]
+    # COLMAP scenes have no metric scale; the viewer sizes the scene for XR from this
+    if metres_per_unit is not None:
+        scene["metresPerUnit"] = round(float(metres_per_unit), 6)
     scene["source"] = {"format": "gutb", "file": Path(path).name, "id": scene_id,
                        "note": "decoded from the SwitchSplat hosted viewer dataset (CC BY 4.0)"}
     (out / "scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
@@ -518,12 +522,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--up", type=float, nargs=3, metavar=("X", "Y", "Z"), help="override the up vector")
     parser.add_argument("--ground-margin", type=float, default=None,
                         help="part gaussians below floor + this height become static (default: automatic)")
+    parser.add_argument("--metres-per-unit", type=float, default=None,
+                        help="real size of one scene unit, e.g. a known object height / its height in the scene")
     args = parser.parse_args(argv)
     if bool(args.manifest_js) != bool(args.scene_id):
         parser.error("--manifest-js and --scene-id go together")
     scene = import_gutb(args.gutb, args.out, manifest_js=args.manifest_js, scene_id=args.scene_id,
                         min_confidence=args.min_confidence, sh_degree=args.sh_degree, name=args.name,
-                        up=args.up, ground_margin=args.ground_margin)
+                        up=args.up, ground_margin=args.ground_margin, metres_per_unit=args.metres_per_unit)
     print(f"wrote {args.out} with {len(scene['parts'])} parts", flush=True)
 
 

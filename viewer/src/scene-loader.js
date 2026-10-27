@@ -19,6 +19,8 @@ import {DEG} from './math.js';
 const DEFAULTS={friction:1.5,frictionTorque:0,mass:2,latchDeg:3};
 
 // "?scene=" is the URL of the export directory (trailing slash optional) or of its scene.json.
+const validScale=v=>{const n=Number(v);return v!=null&&v!==''&&Number.isFinite(n)&&n>0?n:null};
+
 export function resolveSceneUrl(param,base=globalThis.location?.href??'http://localhost/'){
  const abs=new URL(param,base);
  if(abs.pathname.endsWith('.json'))return {dir:new URL('./',abs).href,json:abs.href,key:abs.href};
@@ -105,7 +107,8 @@ const optional=async(url,opts,what)=>{try{return await loadSplats(url,opts)}catc
 const BOX=new THREE.BoxGeometry(1,1,1),EDGES=new THREE.EdgesGeometry(BOX);
 
 // onProgress({url,name,stage:'download'|'decode'|'done'|'failed',loaded,total}) per file, as bytes arrive.
-export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},maxSh=null,concurrency=4}={}){
+// `scale` overrides scene.json metresPerUnit (the URL's ?scale=).
+export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},maxSh=null,concurrency=4,scale=null}={}){
  const {dir,json,key}=resolveSceneUrl(sceneParam);
  onStatus('Loading scene.json');
  let res;try{res=await fetch(json)}catch(e){throw new Error(`Could not fetch ${json}: ${e.message}`)}
@@ -116,6 +119,8 @@ export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},ma
  const root=new THREE.Group();root.name=data.name??'scene';
  const up=new THREE.Vector3(...(data.up??[0,1,0])).normalize();
  root.quaternion.setFromUnitVectors(up,new THREE.Vector3(0,1,0));
+ // Metres per export unit: the root is scaled so the world (and VR) is in metres; everything inside stays in export units.
+ const metresPerUnit=validScale(scale)??validScale(data.metresPerUnit)??1;root.scale.setScalar(metresPerUnit);
  const bounds=new THREE.Box3();let loaded=0,total=1+(data.parts?.length??0);
  const tick=what=>onStatus(`Loaded ${what} (${++loaded}/${total})`);
  const gate=createGate(concurrency);
@@ -165,7 +170,7 @@ export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},ma
    }
   }
   if(p.joint&&body){
-   part.joint=new JointedPart({object:group,...jointOptions(p.joint),box:part.obb??undefined});
+   part.joint=new JointedPart({object:group,...jointOptions(p.joint),box:part.obb??undefined,unit:metresPerUnit});
    part.joint.contacts=part.contacts??null;
    part.interactive=!!part.proxy;
   }
@@ -174,7 +179,9 @@ export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},ma
  if(bounds.isEmpty())bounds.set(new THREE.Vector3(-1,0,-1),new THREE.Vector3(1,2,1));
  root.updateMatrixWorld(true);
 
- const scene={root,data,dir,key,name:data.name??'scene',staticMesh,parts,bounds,
+ const scene={root,data,dir,key,metresPerUnit,
+  // Change the scale live (edit mode): the root, and every joint's unit (its mass, speed caps and force limits).
+  setScale(v){const m=validScale(v);if(m===null)return;scene.metresPerUnit=m;root.scale.setScalar(m);root.updateMatrixWorld(true);for(const p of parts)p.joint?.setUnit(m)},name:data.name??'scene',staticMesh,parts,bounds,
   // Optional (spec addendum v1.1): the desktop camera and a point on the ground plane, in export coordinates.
   view:data.view?.position&&data.view?.target?data.view:null,floor:Array.isArray(data.floor)&&data.floor.length===3?data.floor:null,
   worldBounds:()=>{root.updateMatrixWorld(true);return bounds.clone().applyMatrix4(root.matrixWorld)},

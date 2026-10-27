@@ -59,15 +59,19 @@ export function fitObb(centres,{trim=.02,minSize=.03,maxPoints=60000}={}){
  return {center,size,quaternion:q};
 }
 
-// Distance in metres from a world point to a proxy box mesh (a unit cube scaled to the box size and posed
-// by its ancestors); 0 inside. The proxy must have no scale in its ancestors, only its own (the size).
+// Distance in world units from a world point to a proxy box mesh (a unit cube scaled to the box size and posed
+// by its ancestors); 0 inside. Ancestors may carry a uniform scale (the scene root's metres per unit): the box's
+// world size is read from the proxy's world scale.
 export function distanceToProxy(proxy,point,out=new THREE.Vector3()){
  proxy.updateWorldMatrix(true,false);
  out.copy(point);proxy.worldToLocal(out);
- const sx=proxy.scale.x,sy=proxy.scale.y,sz=proxy.scale.z;
+ proxy.getWorldScale(_ws);
+ const sx=_ws.x,sy=_ws.y,sz=_ws.z;
  const dx=Math.max(Math.abs(out.x)*sx-sx/2,0),dy=Math.max(Math.abs(out.y)*sy-sy/2,0),dz=Math.max(Math.abs(out.z)*sz-sz/2,0);
  return Math.hypot(dx,dy,dz);
 }
+
+const _ws=new THREE.Vector3();
 
 // Axis-aligned bounds of the centres without the outer `trim` fraction on each side (a floater far from
 // the scene would otherwise send the camera to the horizon).

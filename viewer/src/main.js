@@ -1,5 +1,6 @@
 // SwitchSplat viewer: renderer, Spark, the fixed-step joint loop, desktop and WebXR input.
 //   ?scene=<url of the export directory>   default scenes/synthetic/
+//   ?scale=<metres per unit>                override scene.json metresPerUnit (the world is in metres)
 //   ?edit                                   start in edit mode
 //   ?sh=<0..3>                              cap view-dependent colour (spherical harmonics) degree (sh=1 for a Quest)
 //   ?cam=px,py,pz,tx,ty,tz                  starting camera (world coordinates)
@@ -79,7 +80,7 @@ async function main(){
  const sceneParam=params.get('scene')??`${import.meta.env.BASE_URL}scenes/synthetic/`;
  const maxSh=params.has('sh')?Math.min(3,Math.max(0,parseInt(params.get('sh'),10)||0)):null;
  let loaded;
- try{loaded=await loadScene(sceneParam,{onStatus:t=>{loadingText.textContent=t},onProgress:p=>loadList.update(p),maxSh})}
+ try{loaded=await loadScene(sceneParam,{onStatus:t=>{loadingText.textContent=t},onProgress:p=>loadList.update(p),maxSh,scale:params.get('scale')})}
  catch(e){console.error(e);loadingText.textContent=e.message;loadingText.classList.add('error');return}
  world.add(loaded.root);
  $('scene-name').textContent=loaded.name;
@@ -99,7 +100,7 @@ async function main(){
  controls.enableDamping=true;controls.dampingFactor=.12;controls.screenSpacePanning=true;
  const cam=params.get('cam')?.split(',').map(Number);
  // scene.json `view` (export coordinates, turned by the root's up rotation) is the default camera.
- const view=viewInRootFrame(loaded.view,loaded.root.quaternion);
+ const view=viewInRootFrame(loaded.view,loaded.root.quaternion,loaded.metresPerUnit);
  if(cam?.length===6&&cam.every(Number.isFinite)){camera.position.set(cam[0],cam[1],cam[2]);controls.target.set(cam[3],cam[4],cam[5])}
  else if(view){camera.position.copy(view.position);controls.target.copy(view.target)}
  else{camera.position.copy(centre).add(new THREE.Vector3(.35,.3,1).normalize().multiplyScalar(radius*1.6));controls.target.copy(centre)}
@@ -124,7 +125,7 @@ async function main(){
   if(spec==='none')return;
   const b=loaded.worldBounds(),size=b.getSize(new THREE.Vector3()),c=b.getCenter(new THREE.Vector3());
   const explicit=spec?.split(',').map(Number);
-  const spawn=computeSpawn({rootQuaternion:loaded.root.quaternion,floor:loaded.floor,view:loaded.view});
+  const spawn=computeSpawn({rootQuaternion:loaded.root.quaternion,rootScale:loaded.metresPerUnit,floor:loaded.floor,view:loaded.view});
   if(explicit?.length===3&&explicit.every(Number.isFinite))world.position.set(...explicit);
   // A real scene says where the floor is and where to stand: floor at y = 0, you at the view's position, facing its target.
   else if(spawn){world.position.copy(spawn.position);world.quaternion.copy(spawn.quaternion)}
@@ -138,7 +139,7 @@ async function main(){
     world.position.set(-pc.x,-b.min.y,-.9-pc.z);
    }
    // A floor without a view still fixes the height.
-   const fy=floorHeight(loaded.floor,loaded.root.quaternion);if(fy!==null)world.position.y=-fy;
+   const fy=floorHeight(loaded.floor,loaded.root.quaternion,loaded.metresPerUnit);if(fy!==null)world.position.y=-fy;
   }
   placed=true;
  };

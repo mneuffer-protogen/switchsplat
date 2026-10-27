@@ -105,10 +105,10 @@ export function createDesktopInput({canvas,camera,controls,root,getParts,isBlock
    if(ok&&ok2)raw.copy(pusher.b).sub(pusher.a).divideScalar(dt);
   }
   pointer.px=pointer.x;pointer.py=pointer.y;
-  // To the joint's frame (the root has no scale), capped, smoothed.
+  // To the joint's frame: the direction turned, the speed (capped at 4 m/s) from metres/s to export units/s; smoothed.
   root.updateWorldMatrix(true,false);inv.copy(root.matrixWorld).invert();
   const speed=Math.min(4,raw.length());
-  if(speed>0)raw.transformDirection(inv).multiplyScalar(speed);
+  if(speed>0)raw.transformDirection(inv).multiplyScalar(speed/root.scale.x);
   pusher.vel.lerp(raw,smoothing(24,dt));
   // The virtual hand sits just off the surface on the camera's side, so the box is pressed with a clear normal.
   pusher.body.position.copy(hit.point).addScaledVector(raycaster.ray.direction,-.015).applyMatrix4(inv);

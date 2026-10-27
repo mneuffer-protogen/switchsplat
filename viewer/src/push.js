@@ -14,7 +14,9 @@
 //        or locked part (limits pinned at its pose) or a part at its stop does not move: the hand just stops.
 //
 // There is no penetration correction beyond the speed match. A push never unlatches (that takes a grab).
-// All positions are in the joint's frame (the export's coordinates), like drive.js.
+// Positions and the hand's velocity are in the joint's frame (the export's coordinates and units), like drive.js, so
+// surface and hand speeds are compared in the same space. Real-world sizes and speeds (the hand radius, the speed caps,
+// the contact margin: metres) are divided by joint.unit (metres per export unit) here, once.
 import * as THREE from 'three';
 import {HINGE} from './joint.js';
 import {clamp} from './math.js';
@@ -67,8 +69,9 @@ export function sphereObbContact(joint,center,radius,out={point:new THREE.Vector
 // is within radius + CONTACT_MARGIN of a centre. Contact point = that centre as it stands now. The normal is the part's
 // thin PCA axis turned with the part, signed to point toward the hand; for a part with no clear thin axis it is the
 // direction from the centre to the hand.
+// `radius` is in export units (the caller converts a hand size in metres); the margin is converted here.
 export function contactSetContact(joint,set,center,radius,out={point:new THREE.Vector3(),normal:new THREE.Vector3(),depth:0}){
- const reach=radius+CONTACT_MARGIN;
+ const reach=radius+CONTACT_MARGIN/joint.unit;
  const hit=set.nearest(joint.toRest(center,joint.q,_hr),reach);
  if(!hit)return null;
  joint.pointAt(set.point(hit.index,_hp),joint.q,out.point);
@@ -84,14 +87,14 @@ export function contactSetContact(joint,set,center,radius,out={point:new THREE.V
  return out;
 }
 
-// One hand-versus-part exchange for one fixed step. `hand` = {position, velocity, radius} (joint frame, the
-// velocity already smoothed). Returns null when the sphere is not touching the part, else
-//   {closing, pushed, blocked, depth}: closing speed (m/s) between hand and surface (0 when separating),
+// One hand-versus-part exchange for one fixed step. `hand` = {position, velocity, radius}: position and velocity
+// in the joint's frame (export units, smoothed), radius in metres. Returns null when the sphere is not touching the part, else
+//   {closing, pushed, blocked, depth}: closing speed (m/s, real) between hand and surface (0 when separating),
 //   pushed = the part's speed was changed, blocked = the part could not give way (latched, locked, at a stop,
 //   or pushed across its path).
 export function pushJoint(joint,hand,dt,{maxSpeed}={}){
  if(!joint.box&&!joint.contacts)return null;
- const radius=hand.radius??HAND_RADIUS;
+ const radius=(hand.radius??HAND_RADIUS)/joint.unit;// metres to export units
  // A part with a contact set is touched where its splats are; the box is only for parts that have none.
  const c=joint.contacts?contactSetContact(joint,joint.contacts,hand.position,radius,_contact):sphereObbContact(joint,hand.position,radius,_contact);
  if(!c)return null;
@@ -101,8 +104,8 @@ export function pushJoint(joint,hand,dt,{maxSpeed}={}){
  const closing=sP-sB;
  if(closing<=1e-6)return {closing:0,pushed:false,blocked:false,depth:c.depth};
  // Pressed across the way the part can move (or on the hinge line): the surface cannot be pushed along n.
- if(Math.abs(jn)<(hinge?MIN_JN.hinge:MIN_JN.slider))return {closing,pushed:false,blocked:true,depth:c.depth};
- const cap=maxSpeed??(hinge?PUSH_MAX_SPEED.hinge:PUSH_MAX_SPEED.slider);
+ if(Math.abs(jn)<(hinge?MIN_JN.hinge/joint.unit:MIN_JN.slider))return {closing:closing*joint.unit,pushed:false,blocked:true,depth:c.depth};
+ const cap=joint.qSpeed(maxSpeed??(hinge?PUSH_MAX_SPEED.hinge:PUSH_MAX_SPEED.slider));
  const want=clamp(sB/jn,-cap,cap);
  let qd=want;
  const next=joint.q+qd*dt;
@@ -110,7 +113,7 @@ export function pushJoint(joint,hand,dt,{maxSpeed}={}){
  joint.qd=qd;joint.interrupt();
  // Gave way by less than half of what the hand asked: something is holding it.
  const blocked=Math.abs(want)>1e-6&&Math.abs(qd)<Math.abs(want)*.5;
- return {closing,pushed:true,blocked,depth:c.depth};
+ return {closing:closing*joint.unit,pushed:true,blocked,depth:c.depth};
 }
 
 // A hand's velocity from its pose history: the raw difference, smoothed (the tracked pose is noisy and a

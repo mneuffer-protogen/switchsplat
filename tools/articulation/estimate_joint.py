@@ -45,6 +45,13 @@ MERGE_AXIS_DEG = 8.0  # parts whose axes differ by less than this (same sign) ma
 MERGE_LINE_DIST = 0.08  # ... and whose hinge lines pass this close to each other near the part (metres)
 MERGE_DEDUP = 0.005  # gaussians of the second slot closer than this to one of the first are dropped (metres)
 MERGE_MIN_OVERLAP = 0.2  # the closed poses must overlap: fraction of the smaller base set near the other
+TRIM_CORE_SPACINGS = 4.0  # body trim: a gaussian needs TRIM_MIN_DEGREE neighbours within this many median spacings
+TRIM_MIN_DEGREE = 2
+TRIM_LINK_SPACINGS = 10.0  # ... and the body is what links up within this many spacings (panel lines of a sparse part)
+TRIM_MAD_K = 3.0  # ... and lie within median +- k x 1.4826 MAD along the body's principal axes
+TRIM_SOLID_ALPHA = 0.1  # gaussians fainter than this (or half the part's median) do not define the body
+TRIM_SOLID_SCALE = 4.0  # ... nor those whose footprint exceeds this multiple of the median
+TRIM_KEEP_FRACTION = 0.3  # a further component joins the body when it carries this share of the main one's weight
 CLUSTER_LINK_SPACINGS = 5.0  # base points closer than this many median spacings belong to one cluster
 
 
@@ -459,6 +466,92 @@ def clean_split(split: SplitResult) -> tuple[np.ndarray, np.ndarray]:
 
 
 # --------------------------------------------------------------------------------------------
+# Trimming the part to its coherent body
+# --------------------------------------------------------------------------------------------
+
+def _components(points: np.ndarray, radius: float) -> np.ndarray:
+    tree = cKDTree(points)
+    graph = tree.sparse_distance_matrix(tree, radius, output_type="coo_matrix")
+    return connected_components(graph, directed=False)[1]
+
+
+def trim_body(base: Splats, candidate: np.ndarray, link_factor: float = TRIM_LINK_SPACINGS,
+              core_factor: float = TRIM_CORE_SPACINGS,
+              min_degree: int = TRIM_MIN_DEGREE, mad_k: float = TRIM_MAD_K) -> np.ndarray:
+    """Mask (over ``base``) of the coherent body of the part among the ``candidate`` registered gaussians.
+
+    Registered gaussians of a real part still include floaters and bits of neighbouring panels that happen to
+    land on switched gaussians. The body is found at a scale given by the part itself (the link radius is
+    ``link_factor`` x the median nearest-neighbour spacing, so a sparse car door and a dense cabinet door are
+    treated alike):
+
+    1. only "solid" gaussians define it: not near-transparent (alpha < TRIM_SOLID_ALPHA) and not oversized
+       (footprint above TRIM_SOLID_SCALE x the median); glass is faint, so a part that is faint throughout falls
+       back to its own median alpha;
+    2. a k-core filter (every kept gaussian has ``min_degree`` neighbours within the link radius) removes chains
+       and wisps that dangle off the body;
+    3. of the connected components the heaviest (by summed alpha) is the body, together with every component
+       that carries at least TRIM_KEEP_FRACTION of its weight (a second panel of the same part);
+    4. a robust extent clamp along the body's principal axes (median +- ``mad_k`` x 1.4826 MAD) drops what is
+       still far out;
+    5. non-solid gaussians (faint or large) are kept only when they lie within the link radius of that body.
+    """
+    keep = np.zeros(len(base), dtype=bool)
+    idx = np.flatnonzero(candidate)
+    if len(idx) < 4 * min_degree + 4:
+        keep[idx] = True
+        return keep
+    pts = base.positions[idx].astype(np.float64)
+    alpha = 1.0 / (1.0 + np.exp(-base.opacity[idx, 0].astype(np.float64)))
+    size = np.exp(base.scale[idx]).mean(axis=1).astype(np.float64)
+    spacing = median_spacing(pts)
+    radius, core_radius = link_factor * spacing, core_factor * spacing
+    if radius <= 0.0:
+        keep[idx] = True
+        return keep
+
+    min_alpha = min(TRIM_SOLID_ALPHA, 0.5 * float(np.median(alpha)))
+    solid = (alpha >= min_alpha) & (size <= TRIM_SOLID_SCALE * float(np.median(size)))
+    if solid.sum() < 4 * min_degree + 4:
+        solid[:] = True
+    body = solid.copy()
+    for _ in range(10):  # k-core: peel gaussians with too few neighbours until stable
+        sub = np.flatnonzero(body)
+        if len(sub) <= min_degree:
+            break
+        degree = cKDTree(pts[sub]).query_ball_point(pts[sub], core_radius, return_length=True) - 1
+        weak = degree < min_degree
+        if not weak.any():
+            break
+        body[sub[weak]] = False
+    if body.sum() < min_degree + 1:
+        body = solid.copy()
+
+    sub = np.flatnonzero(body)
+    labels = _components(pts[sub], radius)
+    weight = np.bincount(labels, weights=alpha[sub])
+    good = weight >= TRIM_KEEP_FRACTION * weight.max()
+    body[sub[~good[labels]]] = False
+
+    sub = np.flatnonzero(body)
+    axes = principal_frame(pts[sub])
+    centre = np.median(pts[sub], axis=0)
+    ref = (pts[sub] - centre) @ axes.T
+    mid = np.median(ref, axis=0)
+    spread = np.maximum(1.4826 * np.median(np.abs(ref - mid), axis=0), 0.25 * radius)  # thin sheets must not clamp to nothing
+    inside = (np.abs((pts - centre) @ axes.T - mid) <= mad_k * spread).all(axis=1)
+    body &= inside
+    sub = np.flatnonzero(body)
+    near_body = np.zeros(len(pts), dtype=bool)
+    if len(sub):
+        dist, _ = cKDTree(pts[sub]).query(pts, k=1, workers=-1)
+        near_body = dist <= radius
+    final = (body | (~solid & near_body)) & inside
+    keep[idx[final]] = True
+    return keep
+
+
+# --------------------------------------------------------------------------------------------
 # Merging slots that are the same physical part
 # --------------------------------------------------------------------------------------------
 
@@ -613,7 +706,8 @@ def _round(values, digits: int = 5) -> list[float]:
     return [round(float(v), digits) for v in values]
 
 
-def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: int = 0, up=None) -> str:
+def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: int = 0, up=None,
+                 trim: bool = True) -> str:
     """Estimate one part, write its PLYs and update ``part`` in place. Returns a summary line."""
     files = part["files"]
     base = read_ply(scene_dir / files["base"])
@@ -621,6 +715,9 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
     fit = fit_part(base, switched, seed, up)
     split = split_inliers(base, switched, fit.rot, fit.trans, inlier_dist)
     part_mask, reveal_mask = clean_split(split)
+    registered = int(part_mask.sum())
+    if trim:  # floaters and stray panels that registered by chance leave the part and fade out as it opens
+        part_mask = trim_body(base, part_mask)
 
     slot = part["id"]
     outputs = {
@@ -656,7 +753,7 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
     return (
         f"{slot} ({part.get('name', '')}): {fit.kind} axis={joint['axis']} pivot={joint['pivot']} "
         f"open={joint['open']}{unit} rmse={split.rmse * 1000:.1f}mm inliers={split.inlier_ratio:.2f} "
-        f"part={int(part_mask.sum())} vanish={int((~part_mask).sum())} reveal={int(reveal_mask.sum())}"
+        f"part={int(part_mask.sum())} (trimmed {registered - int(part_mask.sum())}) vanish={int((~part_mask).sum())} reveal={int(reveal_mask.sum())}"
     )
 
 
@@ -666,6 +763,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--slots", type=int, nargs="*", default=None, help="1-based slot numbers (default: all)")
     parser.add_argument("--inlier-dist", default="auto", help="'auto' (2.5x median spacing) or a distance in metres")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--trim", action=argparse.BooleanOptionalAction, default=True,
+                        help="trim each part to its coherent body, the rest fades out as vanish (default on)")
     parser.add_argument("--merge", action=argparse.BooleanOptionalAction, default=True,
                         help="merge slots that turn out to be the same hinge / slider of the same part (default on)")
     args = parser.parse_args(argv)
@@ -678,7 +777,8 @@ def main(argv: list[str] | None = None) -> None:
     for part in scene["parts"]:
         if wanted is not None and part["id"] not in wanted:
             continue
-        print(process_part(args.scene_dir, part, inlier, args.seed, scene.get("up")), flush=True)
+        print(process_part(args.scene_dir, part, inlier, args.seed, scene.get("up"), args.trim),
+              flush=True)
         done.add(part["id"])
     if args.merge:
         for line in merge_parts(args.scene_dir, scene, done):

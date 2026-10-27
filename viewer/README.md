@@ -26,6 +26,7 @@ anywhere that sends CORS headers.
 | parameter | meaning |
 | --- | --- |
 | `?scene=<url>` | the export directory (or its `scene.json`); default `scenes/synthetic/` |
+| `?scale=<m>` | metres per export unit, overriding `scene.json` `metresPerUnit` (default 1) |
 | `?edit` | start in edit mode |
 | `?sh=0..3` | cap the view-dependent colour (spherical harmonics) degree, for speed. **Use `?sh=1` on a Quest** with a real (hundreds of thousands of splats) scene; `?sh=0` if it still drops frames |
 | `?cam=px,py,pz,tx,ty,tz` | starting camera, world coordinates |
@@ -78,6 +79,18 @@ anywhere that sends CORS headers.
   speed that would just reach the target, then the critically damped drive eases into the end (it cannot
   overshoot, and a grab or a push takes over). Its settling time is sized by the part: about 0.9 s for a car
   door, 0.6 s for a cabinet door, 0.45 s for a drawer.
+
+### Scale
+
+`metresPerUnit` in `scene.json` (default 1; the COLMAP car is 0.586) is applied as the scene root's scale, so the world,
+the desktop camera and VR are in metres and the car is life-size. Everything in the file (pivots, floor, view, slider
+`min/max/open/latch`, splat positions) stays in export units. The joints also stay in export units and convert their
+metric tuning with `unit = metresPerUnit`: a hinge angle is scale-free; a slider's inertia is `mass * unit^2`, its
+force limit `N * unit`, and every linear speed or size in metres (slider speed caps, the 4 m/s drag cap, push caps, the
+jiggle, the hand sphere 4.5 cm, the 7 cm grab radius, the 2.5 cm contact margin, the 4/5 cm pick radii, the 3 cm hinge-lever
+minimum) is divided by it before it meets a coordinate. Hand positions and velocities are taken in the root's frame, so
+surface and hand speeds are compared in the same units. Edit mode has a "metres per unit" field (live) and
+**Download scene.json** writes it back.
 
 ### Real scenes
 
