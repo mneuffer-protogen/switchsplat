@@ -217,15 +217,33 @@ def _to_splats(rng, points: Points, spacing: float, rot=None, trans=None, jitter
     return make_gaussians(rng, pos, normals, rgb, spacing)
 
 
-def build_scene(out: Path, seed: int = 0) -> dict:
-    """Write the synthetic scene into ``out``; returns the ground-truth joints keyed by slot id."""
+STATIC_SKIN_PATCH = (0.35, 0.7)  # fraction of the door's width (along its longer in-plane axis) that is labelled static
+
+
+def build_scene(out: Path, seed: int = 0, static_skin: bool = False) -> dict:
+    """Write the synthetic scene into ``out``; returns the ground-truth joints keyed by slot id.
+
+    ``static_skin``: a vertical band of the door's closed skin is labelled *static* instead of base (like the patchy
+    labels of a real scan); the closed door gaussians of that band are appended to static.ply, and their count is
+    recorded as ``static_skin`` in the ground truth of slot01.
+    """
     rng = np.random.default_rng(seed)
     out.mkdir(parents=True, exist_ok=True)
 
-    write_ply(out / "static.ply", _to_splats(rng, static_points(rng), STATIC_SPACING))
+    static_splats = _to_splats(rng, static_points(rng), STATIC_SPACING)
 
     door_rot, door_trans = hinge_transform(DOOR_HINGE_AXIS, DOOR_HINGE_PIVOT, np.deg2rad(DOOR_OPEN_DEG))
-    write_ply(out / "slot01_base.ply", _to_splats(rng, door_points(rng), PART_SPACING))
+    door_base = _to_splats(rng, door_points(rng), PART_SPACING)
+    patch_rows = 0
+    if static_skin:
+        x = door_base.positions[:, 0]
+        lo, hi = x.min(), x.max()
+        band = (x >= lo + STATIC_SKIN_PATCH[0] * (hi - lo)) & (x <= lo + STATIC_SKIN_PATCH[1] * (hi - lo))
+        static_splats = Splats.concat([static_splats, door_base.subset(band)])
+        door_base = door_base.subset(~band)
+        patch_rows = int(band.sum())
+    write_ply(out / "static.ply", static_splats)
+    write_ply(out / "slot01_base.ply", door_base)
     switched_door = _to_splats(rng, door_points(rng), PART_SPACING, door_rot, door_trans, JITTER)
     reveal = _to_splats(rng, reveal_points(rng), REVEAL_SPACING)
     write_ply(out / "slot01_switched.ply", Splats.concat([switched_door, reveal]))
@@ -254,7 +272,7 @@ def build_scene(out: Path, seed: int = 0) -> dict:
 
     truth = {
         "slot01": {"kind": "hinge", "axis": DOOR_HINGE_AXIS.tolist(), "pivot": DOOR_HINGE_PIVOT.tolist(),
-                   "min": 0, "max": DOOR_OPEN_DEG, "open": DOOR_OPEN_DEG},
+                   "min": 0, "max": DOOR_OPEN_DEG, "open": DOOR_OPEN_DEG, "static_skin": patch_rows},
         "slot02": {"kind": "slider", "axis": DRAWER_AXIS.tolist(), "pivot": [0.0, 0.0, 0.0],
                    "min": 0, "max": DRAWER_OPEN, "open": DRAWER_OPEN},
     }
@@ -266,8 +284,10 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, required=True, help="output directory")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--static-skin", action="store_true",
+                        help="label a vertical band of the door's closed skin static (tests skin recruitment)")
     args = parser.parse_args(argv)
-    build_scene(args.out, args.seed)
+    build_scene(args.out, args.seed, args.static_skin)
     counts = {p.name: len(read_ply(p)) for p in sorted(args.out.glob("*.ply"))}
     print(f"wrote {args.out}: " + ", ".join(f"{k}={v}" for k, v in counts.items()))
 

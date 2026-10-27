@@ -23,7 +23,7 @@ repeat a closed-pose gaussian (within ``--fuse-dup`` spacings, similar colour an
 * ``near`` (the same surface and colour as the closed part): always added to the part;
 * ``inner`` (the inner face, the edge, the window frame; invisible when closed unless the skin is translucent),
   by ``--inner``: ``part`` adds them to the part too (``auto`` does so for an opaque part, whose median opacity is
-  at least 0.75), ``reveal`` leaves them waiting at the open pose (the old behaviour), ``attach`` writes
+  at least 0.75; a translucent one, hood or hatch, gets ``attach``), ``reveal`` leaves them waiting at the open pose (the old behaviour), ``attach`` writes
   ``slotNN_partReveal.ply`` (closed-pose coordinates, ``files.partReveal``) for a viewer that moves it with the
   part and fades it in with q: closed look untouched, no ghost, the whole door open.
 
@@ -47,6 +47,7 @@ from scipy.spatial import cKDTree
 
 from .export_parts import membership_path
 from .fuse import fuse_open_pose
+from .recruit import RecruitParams, recruit_scene, restore_static
 from .geometry import apply, hinge_transform, rodrigues, rotation_to_axis_angle
 from .ply_io import Splats, read_ply, write_ply
 
@@ -75,6 +76,7 @@ TRIM_SOLID_ALPHA = 0.1  # gaussians fainter than this (or half the part's median
 TRIM_SOLID_SCALE = 4.0  # ... nor those whose footprint exceeds this multiple of the median
 TRIM_KEEP_FRACTION = 0.05  # a further component joins the body when it carries this share of the main one's weight
 INNER_MODES = ("auto", "part", "reveal", "attach")
+REVEAL_MAX_SIZE_M = 0.15  # reveal gaussians wider than this (metres, longest axis) are fog floaters, dropped
 OPAQUE_ALPHA = 0.75  # parts whose median opacity is at least this hide what is behind their skin ("auto" inner mode)
 FUSE_REACH_SPACINGS = 10.0  # open-pose gaussians this close (median spacings) to the closed part belong to the door
 FUSE_DUP_SPACINGS = 1.5  # ... and are dropped when a similar closed-pose gaussian is this close (the median nearest-neighbour
@@ -757,7 +759,8 @@ def load_membership(scene_dir: Path, slot_id: str, n_base: int, n_switched: int)
 
 def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: int = 0, up=None,
                  trim: bool = True, fuse: bool = True, fuse_reach: float = FUSE_REACH_SPACINGS,
-                 fuse_dup: float = FUSE_DUP_SPACINGS, fuse_sh: bool = True, inner: str = "auto") -> str:
+                 fuse_dup: float = FUSE_DUP_SPACINGS, fuse_sh: bool = True, inner: str = "auto",
+                 metres_per_unit: float = 1.0, reveal_max_size: float = REVEAL_MAX_SIZE_M) -> str:
     """Estimate one part, write its PLYs and update ``part`` in place. Returns a summary line."""
     files = part["files"]
     base = read_ply(scene_dir / files["base"])
@@ -783,22 +786,37 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
     if inner not in INNER_MODES:
         raise ValueError(f"inner must be one of {INNER_MODES}, got {inner!r}")
     part_base = base.subset(part_mask)
-    near = inner_splats = Splats.empty(part_base.f_rest.shape[1])
+    if inner == "auto":  # an opaque skin hides the inner face when closed; a translucent one (hood, glass) does not
+        alpha = 1.0 / (1.0 + np.exp(-base.opacity[:, 0].astype(np.float64)))  # of the whole closed sample
+        alpha = alpha if weights is None else alpha / np.maximum(np.asarray(weights), 1.0e-3)
+        inner = "part" if float(np.median(alpha)) >= OPAQUE_ALPHA else "attach"
+    empty = Splats.empty(part_base.f_rest.shape[1])
+    near = inner_splats = extra = empty
+    panel = None
     envelope = np.zeros(len(switched), dtype=bool)
     if fuse and len(part_base) > 3:
+        # ``extra``: the part's footprint beyond the reach of its sparse closed gaussians (glass inside a frame, a
+        # skin the closed scan lacks); it is the panel's own open-pose copy and never drawn when closed
         fusion = fuse_open_pose(part_base, switched, fit.rot, fit.trans, median_spacing(part_base.positions),
-                                reach=fuse_reach, dup=fuse_dup, sh=fuse_sh)
-        near, inner_splats, envelope = fusion.near, fusion.inner, fusion.envelope
-        if inner == "auto":  # an opaque skin hides the inner face when closed; a translucent one (hood, glass) does not
-            alpha = 1.0 / (1.0 + np.exp(-base.opacity[:, 0].astype(np.float64)))  # of the whole closed sample
-            alpha = alpha if weights is None else alpha / np.maximum(np.asarray(weights), 1.0e-3)
-            inner = "part" if float(np.median(alpha)) >= OPAQUE_ALPHA else "reveal"
+                                reach=fuse_reach, dup=fuse_dup, sh=fuse_sh,
+                                footprint=RecruitParams(metres_per_unit=metres_per_unit, colour=1.0e9, angle=90.0, min_height=0.05,
+                                                         max_height=0.12, edge=0.04))  # the underside is no paint
+        near, inner_splats, extra, envelope = fusion.near, fusion.inner, fusion.extra, fusion.envelope
+        panel = fusion.panel
         reveal_mask = ~envelope  # what is not the door is revealed when it opens
-        if inner == "reveal":  # the door's inner face waits at the open pose until the viewer can carry it
+        if inner == "reveal":  # the panel's open-pose copy waits at the open pose (the old behaviour)
             reveal_mask[fusion.inner_index] = True
+            reveal_mask[fusion.extra_index] = True
         if int(reveal_mask.sum()) < max(MIN_SET, 0.01 * len(reveal_mask)):
             reveal_mask[:] = False
-    attached = inner_splats if inner == "attach" and len(inner_splats) else None
+    pieces = {"attach": (near, inner_splats, extra), "part": (extra,)}.get(inner, ())
+    if reveal_max_size > 0 and reveal_mask.any():  # big soft floaters of the open state smear when they fade in
+        size = np.exp(switched.scale.astype(np.float64)).max(axis=1) * metres_per_unit
+        reveal_mask &= size <= reveal_max_size
+    carried = [x for x in pieces if len(x)]
+    attached = Splats.concat(carried) if carried else None  # rides on the part, fades in with the "panel" curve
+    if inner == "attach":
+        near = inner_splats = empty  # nothing of the open-pose copy is drawn when closed
     body = [part_base, near] + ([inner_splats] if inner == "part" else [])
 
     outputs = {
@@ -807,6 +825,12 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
         "reveal": switched.subset(reveal_mask) if reveal_mask.any() else None,
         "partReveal": attached,
     }
+    # the open panel in the closed pose: the template of what is "this panel" for the skin recruitment (recruit.py)
+    panel_file = scene_dir / f"{slot}_panel.ply"
+    if panel is not None and len(panel):
+        write_ply(panel_file, panel)
+    else:
+        panel_file.unlink(missing_ok=True)
     for key, splats in outputs.items():
         name = f"{slot}_{key}.ply"
         if splats is None:
@@ -834,19 +858,21 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
         "fit": {"rmse": round(reported.rmse, 5), "inlierRatio": round(reported.inlier_ratio, 4),
                 "screw": round(fit.screw, 5)},
     }
+    if inner == "attach":  # a translucent skin shows the interior through it: let the interior in later
+        joint["fade"] = {"reveal": [0.12, 0.35], "panel": [0.15, 0.5]}
     part["joint"] = joint
     part["stats"] = {
         "base": len(base), "baseConfident": int(fit_b.sum()), "switched": len(switched),
-        "registered": registered, "part": len(part_base), "fused": len(near) + (len(inner_splats) if inner == "part" else 0),
-        "inner": len(inner_splats), "innerMode": inner,
-        "doorEnvelope": int(envelope.sum()), "reveal": int(reveal_mask.sum()), "vanish": int((~part_mask).sum()),
+        "registered": registered, "part": len(part_base), "skinRows": len(part_base) + len(near), "fused": len(near) + (len(inner_splats) if inner == "part" else 0),
+        "inner": len(inner_splats), "extra": len(extra), "attached": 0 if attached is None else len(attached), "innerMode": inner,
+        "doorEnvelope": int(envelope.sum()), "panelRows": 0 if panel is None else len(panel), "reveal": int(reveal_mask.sum()), "vanish": int((~part_mask).sum()),
     }
     unit = "deg" if fit.kind == "hinge" else "m"
     return (
         f"{slot} ({part.get('name', '')}): {fit.kind} axis={joint['axis']} pivot={joint['pivot']} "
         f"open={joint['open']}{unit} rmse={reported.rmse * 1000:.1f}mm inliers={reported.inlier_ratio:.2f} "
         f"base={len(base)} registered={registered} part={len(part_base)} (trimmed {registered - len(part_base)}) "
-        f"fused={len(near)} inner={len(inner_splats)} ({inner}) vanish={int((~part_mask).sum())} reveal={int(reveal_mask.sum())}"
+        f"fused={len(near)} inner={len(inner_splats)} attached={0 if attached is None else len(attached)} ({inner}) vanish={int((~part_mask).sum())} reveal={int(reveal_mask.sum())}"
     )
 
 
@@ -875,6 +901,19 @@ def main(argv: list[str] | None = None) -> None:
                              "one), 'reveal' = waits at the open pose and fades in (ghosts while the part moves), "
                              "'attach' = slotNN_partReveal.ply, moves with the part and fades in with it (files.partReveal; "
                              "needs viewer support), 'auto' (default) = 'part' for opaque parts, 'reveal' for translucent ones")
+    parser.add_argument("--recruit", action=argparse.BooleanOptionalAction, default=True,
+                        help="move the static gaussians that lie on a part's closed skin into the part (rows leave "
+                             "static.ply, so the closed render is unchanged and no ghost of the panel stays behind); "
+                             "--no-recruit puts them back (default on)")
+    parser.add_argument("--recruit-panel", action="store_true",
+                        help="use the open-pose panel mapped back to the closed pose as the recruitment template "
+                             "(sharper outline, but pulls in bodywork at the hinge on the car; default: the closed skin)")
+    parser.add_argument("--recruit-edge", type=float, default=None, help="footprint margin beyond the part, metres (default 0.03)")
+    parser.add_argument("--recruit-close", type=float, default=None, help="holes in the part's footprint up to twice this are filled, metres (default 0.25)")
+    parser.add_argument("--recruit-height", type=float, default=None, help="max distance to the surface in part thicknesses (default 2.5)")
+    parser.add_argument("--recruit-max-height", type=float, default=None, help="... capped at this many metres (default 0.08)")
+    parser.add_argument("--recruit-angle", type=float, default=None, help="max angle between a gaussian's flat axis and the surface normal, degrees (default 55)")
+    parser.add_argument("--recruit-colour", type=float, default=None, help="max RGB distance to the nearest part gaussians (default 0.55)")
     parser.add_argument("--fuse-sh", action=argparse.BooleanOptionalAction, default=True,
                         help="rotate the view-dependent colour of fused gaussians (off: they keep only the DC colour)")
     args = parser.parse_args(argv)
@@ -889,12 +928,20 @@ def main(argv: list[str] | None = None) -> None:
             continue
         print(process_part(args.scene_dir, part, inlier, args.seed, scene.get("up"), args.trim,
                            fuse=args.fuse, fuse_reach=args.fuse_reach, fuse_dup=args.fuse_dup, fuse_sh=args.fuse_sh,
-                           inner=args.inner),
+                           inner=args.inner, metres_per_unit=float(scene.get("metresPerUnit", 1.0))),
               flush=True)
         done.add(part["id"])
     if args.merge:
         for line in merge_parts(args.scene_dir, scene, done):
             print(line, flush=True)
+    if args.recruit:
+        overrides = {k: v for k, v in dict(edge=args.recruit_edge, close=args.recruit_close, height=args.recruit_height,
+                                           max_height=args.recruit_max_height, angle=args.recruit_angle,
+                                           colour=args.recruit_colour).items() if v is not None}
+        params = RecruitParams(metres_per_unit=float(scene.get("metresPerUnit", 1.0)), **overrides)
+        recruit_scene(args.scene_dir, scene, done, params, use_panel=args.recruit_panel)
+    else:
+        restore_static(args.scene_dir, scene, done)
     scene_path.write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
 
 

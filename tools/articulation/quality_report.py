@@ -15,6 +15,10 @@ earlier export of the scene) and two coverage metrics measured in the part's clo
   of the gaussians of that render whose centre lies in the cell and within the part's slab, clipped to 1. The
   mean over the box, the share of "hole" cells (coverage < 0.05) and the largest connected hole are reported.
 
+* ghost: the summed opacity of the *static* gaussians within 4 cm of the part's closed surface (inside its footprint):
+  what a moving panel leaves behind as a flat translucent copy of itself. Measured against the new part's own skin
+  for both exports, so recruitment (which moves those gaussians into the part) shows as a drop.
+
 The verdict per part is PASS when the new closed coverage is not lower than the reference and no bigger hole
 appeared. The grid cell is 3 cm of real size (``metresPerUnit`` of the scene).
 """
@@ -30,6 +34,7 @@ import numpy as np
 from scipy import ndimage
 
 from .ply_io import Splats, read_ply
+from .recruit import ghost_mass
 
 HOLE_COVERAGE = 0.05
 SLAB_MARGIN = 0.05  # scene units beyond the part's 5-95 % thickness
@@ -145,7 +150,9 @@ def analyse(scene_dir: Path, reference: Path | None, cell_metres: float = 0.03) 
             grid = coverage_grid(frame, closed, cell)
             hole_share, hole_max = hole_stats(grid)
             row[tag] = {"counts": counts, "occupancy": occupancy(frame, p.positions, cell),
-                        "closed_mean": float(grid.mean()), "hole_share": hole_share, "hole_max": hole_max}
+                        "closed_mean": float(grid.mean()), "hole_share": hole_share, "hole_max": hole_max,
+                        "ghost": ghost_mass(new_part, stat, 0.04, float(sc.get("metresPerUnit", 1.0)),
+                                            part.get("stats", {}).get("skinRows"))}
         rows.append(row)
     return rows
 
@@ -159,7 +166,7 @@ def verdict(row: dict) -> bool:
 
 def format_table(rows: list[dict]) -> str:
     head = ("slot", "base", "conf", "part", "fused", "inner", "reveal", "vanish", "occupancy", "closed cov", "holes",
-            "max hole", "gate")
+            "max hole", "ghost", "gate")
     lines = ["  ".join(f"{h:>10}" for h in head)]
 
     def pair(new, old, fmt):
@@ -182,6 +189,7 @@ def format_table(rows: list[dict]) -> str:
             pair(new["closed_mean"], old["closed_mean"] if old else None, "{:.3f}"),
             pair(new["hole_share"], old["hole_share"] if old else None, "{:.3f}"),
             pair(new["hole_max"], old["hole_max"] if old else None, "{}"),
+            pair(new["ghost"], old["ghost"] if old else None, "{:.0f}"),
             "PASS" if verdict(row) else "FAIL",
         )
         lines.append("  ".join(f"{c:>10}" for c in cells))

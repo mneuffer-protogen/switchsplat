@@ -195,6 +195,10 @@ class Fusion:
     inner_index: np.ndarray  # switched rows of ``inner``
     envelope: np.ndarray  # bool [Ns]: switched rows in the door's volume (near, inner or duplicate)
     duplicates: int  # envelope rows dropped as duplicates of a closed-pose gaussian (or of each other)
+    extra: Splats | None = None  # open-pose gaussians of the part's footprint beyond ``reach`` (glass inside a frame, ...)
+    extra_index: np.ndarray | None = None  # switched rows of ``extra``
+    panel: Splats | None = None  # the whole open panel (every envelope row, duplicates included) in the CLOSED pose
+    components: tuple[int, int] = (0, 0)  # (rows kept, rows dropped) by the connectivity pruning of the open panel
 
 
 def part_thickness(points: np.ndarray) -> float:
@@ -222,8 +226,36 @@ def door_reach(points: np.ndarray, spacing: float, reach_spacings: float) -> flo
     return float(min(reach_spacings * spacing, max(part_thickness(points), MIN_REACH_SPACINGS * spacing)))
 
 
+LINK_SPACINGS = 6.0  # open-pose panel gaussians this close (median spacings) belong to one connected piece
+KEEP_PIECE = 0.05  # a further piece must carry this share of the main piece's rows
+
+
+def _connected_panel(open_positions: np.ndarray, envelope: np.ndarray, spacing: float):
+    """Keep the connected pieces of the open panel candidates (in the OPEN pose, where the panel hangs in the air).
+
+    At the open pose the panel has swung away from the body, so what truly belongs to it is one (or a few) connected
+    sheets; candidates that only fall into the closed-pose volume by accident (interior far behind, scattered bits)
+    form small separate pieces and are dropped. Returns (new envelope, number of rows dropped).
+    """
+    from scipy.sparse.csgraph import connected_components
+
+    idx = np.flatnonzero(envelope)
+    if len(idx) < 8 or spacing <= 0.0:
+        return envelope, 0
+    pts = open_positions[idx].astype(np.float64)
+    tree = cKDTree(pts)
+    labels = connected_components(tree.sparse_distance_matrix(tree, LINK_SPACINGS * spacing, output_type="coo_matrix"),
+                                  directed=False)[1]
+    size = np.bincount(labels)
+    good = size >= KEEP_PIECE * size.max()
+    out = np.zeros_like(envelope)
+    out[idx[good[labels]]] = True
+    return out, int(len(idx) - good[labels].sum())
+
+
 def fuse_open_pose(part: Splats, switched: Splats, rot: np.ndarray, trans: np.ndarray, spacing: float,
-                   reach: float = 10.0, dup: float = 0.5, sh: bool = True, near: float = NEAR_SPACINGS) -> Fusion:
+                   reach: float = 10.0, dup: float = 0.5, sh: bool = True, near: float = NEAR_SPACINGS,
+                   footprint=None) -> Fusion:
     """Move the door's open-pose gaussians into the closed pose and sort them into near / inner.
 
     ``rot``/``trans`` is the base -> switched transform. A switched gaussian belongs to the door when, mapped
@@ -250,6 +282,14 @@ def fuse_open_pose(part: Splats, switched: Splats, rot: np.ndarray, trans: np.nd
     tree = cKDTree(part.positions.astype(np.float64))
     dist, _ = tree.query(moved.positions.astype(np.float64), k=1, workers=-1)
     envelope = dist <= door_reach(part.positions, spacing, reach)
+    footprint_only = np.zeros(len(moved), dtype=bool)
+    if footprint is not None:  # the whole footprint of the part's surface (``recruit.RecruitParams``), glass inside a frame included
+        from .recruit import select_skin
+
+        footprint_only = select_skin(part, moved, footprint).mask & ~envelope
+        envelope = envelope | footprint_only
+    envelope, dropped = _connected_panel(switched.positions, envelope, spacing)
+    footprint_only &= envelope
     env_idx = np.flatnonzero(envelope)
     inside = moved.subset(env_idx)
     kept = ~duplicate_mask(inside, part, dup * spacing)
@@ -266,5 +306,7 @@ def fuse_open_pose(part: Splats, switched: Splats, rot: np.ndarray, trans: np.nd
     surface = np.clip(part.rgb, 0, 1)[nearest].mean(axis=1)  # the closed surface colour around the gaussian
     colour = np.linalg.norm(np.clip(fused.rgb, 0, 1) - surface, axis=1)
     is_near = (d_near[:, 0] <= near * spacing) & (colour <= NEAR_COLOUR)
-    return Fusion(fused.subset(is_near), fused.subset(~is_near), final_idx[~is_near], envelope,
-                  len(env_idx) - len(final_idx))
+    only = footprint_only[final_idx]  # beyond the reach: the part's own open-pose copy, never drawn when closed
+    return Fusion(fused.subset(is_near & ~only), fused.subset(~is_near & ~only), final_idx[~is_near & ~only], envelope,
+                  len(env_idx) - len(final_idx), fused.subset(only), final_idx[only], moved.subset(envelope),
+                  (int(envelope.sum()), dropped))

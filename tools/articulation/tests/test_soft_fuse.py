@@ -339,7 +339,8 @@ def test_translucent_part_keeps_its_inner_face_out_of_the_part(door_with_inner_f
         write_ply(work / name, Splats(splats.positions, splats.f_dc, splats.f_rest, np.full_like(splats.opacity, -0.85),
                                       splats.scale, splats.rot))
     part = run_slot01(work)
-    assert part["stats"]["innerMode"] == "reveal"
+    assert part["stats"]["innerMode"] == "attach"  # a translucent skin: its open-pose copy rides on the part, hidden when closed
+    assert part["joint"]["fade"]["reveal"][0] > 0.04
 
 
 def test_soft_export_then_estimate_is_idempotent_and_uses_the_sidecar(tmp_path):

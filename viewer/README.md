@@ -135,6 +135,12 @@ See `articulation-spec.md` in the SwitchSplat export tooling: `scene.json` plus 
 hinge angles are degrees in the file, `up` is rotated onto +Y. A part with `joint: null` is shown static (its
 `base` splats) and cannot be grabbed; a part without `files.part` moves its `files.base` instead.
 
+`files.partReveal` (optional) is the panel's own open-pose copy in closed-pose coordinates: the viewer adds it to the
+part's group, so it moves with the panel, and fades it in with the `panel` curve (`fadeLevels(f).panel`, default
+smoothstep over 15-50 % of the travel). `files.reveal` (world-fixed content uncovered behind the panel) uses the
+`reveal` curve and `files.vanish` the `vanish` curve; all three are overridable per part in `joint.fade`
+(`{reveal:[a,b], vanish:[a,b], panel:[a,b]}`, fractions of travel). No mesh is ever hidden, only its opacity changes.
+
 ## Source map
 
 | file | role |
@@ -144,7 +150,7 @@ hinge angles are degrees in the file, `up` is rotated onto +Y. A part with `join
 | `src/push.js` | hand sphere against a part's box and the momentum exchange (`pushJoint`), hand velocity |
 | `src/spawn.js`, `src/locomotion.js` | VR spawn from `view`/`floor`/`up`; thumbstick walk and snap turn |
 | `src/drive.js` | grab drive (grip point stored on the part) and the mouse drag-plane target |
-| `src/scene-loader.js` | scene.json + PLYs into Spark `SplatMesh`es, OBB proxies, reveal/vanish fades (`src/fade.js`) |
+| `src/scene-loader.js` | scene.json + PLYs into Spark `SplatMesh`es, OBB proxies, reveal/vanish/partReveal fades (`src/fade.js`) |
 | `src/scenes.js` | the scene list, default selection and `?scene=` URL handling |
 | `src/perf.js` | `?perf` instrumentation |
 | `src/ply-centres.js`, `src/obb.js` | splat centres from a PLY and the PCA/percentile oriented box |

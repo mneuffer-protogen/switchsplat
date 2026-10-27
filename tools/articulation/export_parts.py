@@ -234,6 +234,8 @@ def export_parts(splats: Splats, logits: np.ndarray, out: Path, *, min_confidenc
     """
     split = split_by_state(logits, min_confidence)
     out.mkdir(parents=True, exist_ok=True)
+    for stale in out.glob("slot*_skin.ply"):  # skin recruited from an earlier static set (estimate_joint) no longer applies
+        stale.unlink()
     soft = soft_split(softmax(logits), min(soft_threshold, min_confidence)) if soft_threshold > 0 else None
     if soft is None:
         write_ply(out / "static.ply", splats.subset(split.static))
