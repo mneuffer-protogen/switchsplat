@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SwitchSplat Viewer</title>
+<style>
+:root{
+ --bg:#101114;--panel:rgba(20,22,28,.78);--line:rgba(255,255,255,.12);--text:#eceef3;--muted:#9aa1b0;--accent:#66ccff;--warn:#ffb020;--danger:#ff6b6b;
+ color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#view{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+#loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:20;transition:opacity .4s}
+#loading.done{opacity:0;pointer-events:none}
+#loading-text{max-width:min(90vw,520px);text-align:center;color:var(--muted)}
+#loading-text.error{color:var(--danger)}
+#hud{position:fixed;top:12px;left:max(16px,env(safe-area-inset-left));width:min(300px,calc(100vw - 32px));max-height:calc(100% - 24px);overflow:auto;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:10}
+#hud h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em}
+#status{display:block;color:var(--muted);font-size:12px;min-height:1.4em}
+#parts{list-style:none;margin:8px 0;padding:0;display:grid;gap:6px}
+#parts li{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:4px 8px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04)}
+#parts li.open{border-color:rgba(102,204,255,.45)}
+#parts .name{font-weight:560;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#parts .pct{color:var(--muted);font-variant-numeric:tabular-nums;min-width:3.2em;text-align:right}
+#parts .bar{grid-column:1/-1;height:3px;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden}
+#parts .bar>div{height:100%;width:0;background:var(--accent)}
+.badge{padding:1px 6px;border-radius:999px;background:rgba(255,176,32,.18);color:var(--warn);font-size:11px;font-weight:600;justify-self:start}
+button{font:inherit;color:var(--text);background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer}
+button:hover:not(:disabled){background:rgba(255,255,255,.16)}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#parts button.toggle{min-width:4.6em}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+#enter-vr{background:var(--accent);color:#06222e;border-color:transparent;font-weight:650}
+#enter-vr:hover:not(:disabled){background:#8bdaff}
+label.toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+details{margin-top:10px;color:var(--muted);font-size:12.5px}
+summary{cursor:pointer;color:var(--text)}
+details ul{margin:6px 0 0;padding-left:18px}
+kbd{font:inherit;padding:0 4px;border:1px solid var(--line);border-radius:4px}
+.edit-gui{position:fixed!important;top:12px;right:12px;z-index:11}
+.edit-gui .low-fit>.lil-title,.edit-gui .low-fit>.title{color:var(--warn)}
+@media(max-width:560px){#hud{top:auto;bottom:12px;max-height:46%}.edit-gui{top:12px}}
+</style>
+</head>
+<body>
+<canvas id="view" tabindex="0"></canvas>
+<div id="loading"><div id="loading-text">Loading scene</div></div>
+<aside id="hud" aria-label="Parts">
+ <h1 id="scene-name">SwitchSplat</h1>
+ <span id="status" role="status"></span>
+ <ul id="parts"></ul>
+ <div class="row">
+  <button id="enter-vr" type="button" disabled>Enter VR</button>
+  <label class="toggle"><input type="checkbox" id="edit-toggle"> Edit mode</label>
+  <button id="reset" type="button" title="Close every part">Reset</button>
+ </div>
+ <details id="help" open>
+  <summary>Controls</summary>
+  <ul>
+   <li><b>Click</b> a part: open or close it (animated)</li>
+   <li><b>Drag</b> a part: swing or slide it, release to let it coast</li>
+   <li>Drag empty space: orbit. Right drag: pan. Wheel: zoom</li>
+   <li>VR: <b>grip</b> next to a part to take hold, <b>trigger</b> to toggle it</li>
+   <li>Edit mode: move the pivot (orange), turn the axis, tune the joint, download <code>scene.json</code></li>
+  </ul>
+ </details>
+</aside>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

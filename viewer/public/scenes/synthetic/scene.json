@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "name": "synthetic",
+  "up": [
+    0,
+    1,
+    0
+  ],
+  "static": "static.ply",
+  "parts": [
+    {
+      "id": "slot01",
+      "name": "cabinet door",
+      "files": {
+        "base": "slot01_base.ply",
+        "switched": "slot01_switched.ply",
+        "part": "slot01_part.ply",
+        "reveal": "slot01_reveal.ply",
+        "vanish": null
+      },
+      "joint": {
+        "kind": "hinge",
+        "axis": [
+          0.00491,
+          -0.99998,
+          -0.00485
+        ],
+        "pivot": [
+          -0.40019,
+          0.64626,
+          0.42013
+        ],
+        "min": 0,
+        "max": 95.0017,
+        "open": 95.0017,
+        "friction": 1.5,
+        "frictionTorque": 0,
+        "latch": 3,
+        "mass": 2,
+        "fit": {
+          "rmse": 0.00838,
+          "inlierRatio": 1.0,
+          "screw": 0.00165
+        }
+      }
+    },
+    {
+      "id": "slot02",
+      "name": "drawer",
+      "files": {
+        "base": "slot02_base.ply",
+        "switched": "slot02_switched.ply",
+        "part": "slot02_part.ply",
+        "reveal": null,
+        "vanish": null
+      },
+      "joint": {
+        "kind": "slider",
+        "axis": [
+          0.00242,
+          -0.00022,
+          1.0
+        ],
+        "pivot": [
+          -0.00317,
+          0.12932,
+          0.31607
+        ],
+        "min": 0,
+        "max": 0.3502,
+        "open": 0.3502,
+        "friction": 1.5,
+        "frictionTorque": 0,
+        "latch": 0.02,
+        "mass": 2,
+        "fit": {
+          "rmse": 0.00779,
+          "inlierRatio": 0.9965,
+          "screw": 0.0
+        }
+      }
+    }
+  ]
+}

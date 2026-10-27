@@ -1,0 +1,24 @@
+{
+  "name": "switchsplat-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WebXR Gaussian-splat viewer for SwitchSplat articulated scenes",
+  "scripts": {
+    "dev": "vite",
+    "dev:http": "vite --mode http",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "test": "node --test \"tests/*.test.js\""
+  },
+  "dependencies": {
+    "@sparkjsdev/spark": "2.3.1",
+    "lil-gui": "0.21.0",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "2.3.0",
+    "iwer": "2.1.1",
+    "vite": "8.3.4"
+  }
+}

@@ -75,6 +75,23 @@ python train.py --config-name apps/colmap_switchsplat_fisheye_finetune.yaml path
     resume=runs/<run>/ckpt_last.pt loss.slot_mask.mask_run=runs/<run>/object_masks/settled
 ```
 
+### 5. Articulated parts and the WebXR viewer
+
+Each slot can be turned into one rigid part on a hinge or slide, so a door swings open smoothly or can be grabbed and opened by hand instead of switching state. Split a trained model into a static set and per-slot sets, then fit each slot's joint by registering its closed Gaussians onto its open ones:
+
+```bash
+python -m tools.articulation.export_parts --checkpoint runs/<run>/ckpt_last.pt --out viewer/public/scenes/<scene_name>
+python -m tools.articulation.estimate_joint viewer/public/scenes/<scene_name>
+```
+
+`scene.json` in that folder then holds each part's joint (axis, pivot, limits, friction), which the viewer's edit mode can correct. Run the viewer with:
+
+```bash
+cd viewer && npm install && npm run dev:http
+```
+
+and open `http://localhost:5198/?scene=scenes/<scene_name>/`. Click a part to animate it open or closed, or drag it to swing it along its hinge. `npm run dev -- --host` serves HTTPS for a headset, where the controller grip takes hold of a part. `python -m tools.articulation.make_synthetic_scene --out <dir>` builds a small test scene; the one in `viewer/public/scenes/synthetic/` is loaded by default.
+
 ## Acknowledgements
 
 This code is built on [3DGRUT](https://github.com/nv-tlabs/3dgrut), [FullCircle](https://github.com/theialab/fullcircle) and [gsplat](https://github.com/nerfstudio-project/gsplat).
