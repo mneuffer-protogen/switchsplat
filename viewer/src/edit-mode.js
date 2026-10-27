@@ -129,7 +129,7 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
    const r=state.selected&&rows.get(state.selected);if(r)r.scrub.updateDisplay();
   },
   exportScene:()=>buildExport(loaded,jointed),
-  dispose(){transform.dispose();gui.destroy();for(const r of rows.values())r.helper.removeFromParent()},
+  dispose(){transform.detach();scene.remove(gizmo);transform.dispose();gui.destroy();for(const r of rows.values())r.helper.removeFromParent()},
  };
 }
 

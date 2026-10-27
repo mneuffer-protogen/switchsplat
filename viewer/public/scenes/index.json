@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "default": "car",
+  "scenes": [
+    {
+      "id": "car",
+      "name": "Car",
+      "path": "scenes/car/",
+      "description": "Two doors, hood and hatch (SwitchSplat 'car' scan, CC BY 4.0)",
+      "metresPerUnit": 0.586,
+      "heavy": true
+    },
+    {
+      "id": "synthetic",
+      "name": "Cabinet (synthetic)",
+      "path": "scenes/synthetic/",
+      "description": "Small test scene: a cabinet door and a drawer"
+    }
+  ]
+}

@@ -96,9 +96,10 @@ export function createXrInput({renderer,scene,root,getParts,tune,onSelect=()=>{}
   const hand={i,controller,grip,ray,collider,source:null,hover:null,aim:null,drive:null,part:null,pos:new THREE.Vector3(),local:new THREE.Vector3(),squeezing:false,
    motion:new HandMotion(),touched:new Map(),touching:new Set(),pushNow:new Set(),handBody:{position:new THREE.Vector3(),velocity:new THREE.Vector3(),radius:HAND_RADIUS}};
   hands.push(hand);
-  controller.addEventListener('connected',e=>{hand.source=e.data;controller.visible=grip.visible=true});
-  controller.addEventListener('disconnected',()=>{release(hand);hand.source=null;hand.motion.reset();controller.visible=grip.visible=false});
-  controller.addEventListener('squeezestart',()=>{
+  const on=(type,fn)=>{controller.addEventListener(type,fn);unsub.push(()=>controller.removeEventListener(type,fn))};
+  on('connected',e=>{hand.source=e.data;controller.visible=grip.visible=true});
+  on('disconnected',()=>{release(hand);hand.source=null;hand.motion.reset();controller.visible=grip.visible=false});
+  on('squeezestart',()=>{
    hand.squeezing=true;
    if(hand.drive)return;
    refresh(hand);
@@ -109,8 +110,8 @@ export function createXrInput({renderer,scene,root,getParts,tune,onSelect=()=>{}
    // A locked part only rattles its handle.
    if(part.joint.locked)pulse(hand,.5,.12);else pulse(hand,.35,.06);
   });
-  controller.addEventListener('squeezeend',()=>{hand.squeezing=false;release(hand)});
-  controller.addEventListener('selectstart',()=>{
+  on('squeezeend',()=>{hand.squeezing=false;release(hand)});
+  on('selectstart',()=>{
    if(hand.drive)return;
    refresh(hand);
    const part=hand.hover??hand.aim?.part;if(!part?.joint)return;
@@ -184,6 +185,11 @@ export function createXrInput({renderer,scene,root,getParts,tune,onSelect=()=>{}
   // The view jumped (a snap turn, tracking came back): the hands' speeds across it mean nothing.
   noteJump(){for(const h of hands)h.motion.reset()},
   releaseAll(){for(const h of hands){release(h);h.touching.clear();h.touched.clear();h.motion.reset()}},
-  dispose(){for(const u of unsub)u();for(const h of hands){release(h);scene.remove(h.controller,h.grip)}},
+  // three caches the controller objects, so a second viewer instance gets the same ones: take everything we put on them off.
+  dispose(){
+   for(const u of unsub)u();
+   for(const h of hands){release(h);h.touching.clear();h.touched.clear();h.controller.remove(h.ray);h.grip.clear();h.collider.material.dispose();scene.remove(h.controller,h.grip)}
+   colliderGeo.dispose();rayGeo.dispose();rayMat.dispose();
+  },
  };
 }

@@ -15,6 +15,7 @@ import {buildContacts} from './contact.js';
 import {fitObb,trimmedBounds} from './obb.js';
 import {JointedPart,HINGE,SLIDER} from './joint.js';
 import {DEG} from './math.js';
+import {setFade} from './fade.js';
 
 const DEFAULTS={friction:1.5,frictionTorque:0,mass:2,latchDeg:3};
 
@@ -51,8 +52,8 @@ export function jointToJson(joint,original={}){
 // Download a file with progress: onProgress(received, total) per chunk, total 0 when the server does not say
 // (or compresses, so content-length is not the size of what arrives). The bytes land in one buffer that
 // is sized from content-length when known, so a 150 MB PLY is not held twice.
-async function fetchBuffer(url,onProgress=()=>{}){
- const r=await fetch(url);
+async function fetchBuffer(url,onProgress=()=>{},signal){
+ const r=await fetch(url,{signal});
  if(!r.ok)throw new Error(`${r.status} ${r.statusText} for ${url}`);
  const length=Number(r.headers.get('content-length'))||0,total=r.headers.get('content-encoding')?0:length;
  if(!r.body?.getReader){const b=await r.arrayBuffer();onProgress(b.byteLength,b.byteLength);return b}
@@ -83,16 +84,17 @@ function createGate(n){
 // Read a PLY's centres, then hand its bytes to Spark. The centres come first: Spark may take ownership of
 // the buffer. If the file is not a plain binary PLY the centres come from Spark's decoded splats instead.
 // Nothing here walks the splats per frame; only the (strided) centres are read, once.
-async function loadSplats(url,{wantCentres,wantAttrs=false,maxSh,max=60000,onProgress=()=>{}}){
+async function loadSplats(url,{wantCentres,wantAttrs=false,maxSh,max=60000,onProgress=()=>{},signal}){
  const base={url,name:url.split('/').pop()};
  onProgress({...base,stage:'download',loaded:0,total:0});
- const buffer=await fetchBuffer(url,(loaded,total)=>onProgress({...base,stage:'download',loaded,total}));
+ const buffer=await fetchBuffer(url,(loaded,total)=>onProgress({...base,stage:'download',loaded,total}),signal);
+ signal?.throwIfAborted();
  onProgress({...base,stage:'decode',loaded:buffer.byteLength,total:buffer.byteLength});
  let centres=null,parsed=null;
  if(wantCentres){try{if(wantAttrs){parsed=plyPoints(buffer,{max});centres=parsed.centres}else centres=plyCentres(buffer,{max})}catch(e){console.warn(`${url}: ${e.message}; reading centres through Spark`)}}
  const mesh=new SplatMesh({fileBytes:buffer,fileType:SplatFileType.PLY,raycastable:false});
  if(maxSh!=null)mesh.maxSh=maxSh;
- await mesh.initialized;
+ try{await mesh.initialized;signal?.throwIfAborted()}catch(e){try{mesh.dispose()}catch{}throw e}
  if(wantCentres&&!centres){
   const all=[];mesh.forEachSplat((i,c)=>{all.push(c.x,c.y,c.z)});
   const step=Math.max(1,Math.ceil(all.length/3/max)),out=[];
@@ -102,18 +104,19 @@ async function loadSplats(url,{wantCentres,wantAttrs=false,maxSh,max=60000,onPro
  onProgress({...base,stage:'done',loaded:buffer.byteLength,total:buffer.byteLength});
  return {mesh,centres,parsed};
 }
-const optional=async(url,opts,what)=>{try{return await loadSplats(url,opts)}catch(e){console.warn(`${what} not loaded: ${e.message}`);opts.onProgress?.({url,name:url.split('/').pop(),stage:'failed',loaded:0,total:0});return null}};
+const optional=async(url,opts,what)=>{try{return await loadSplats(url,opts)}catch(e){if(opts.signal?.aborted)throw e;console.warn(`${what} not loaded: ${e.message}`);opts.onProgress?.({url,name:url.split('/').pop(),stage:'failed',loaded:0,total:0});return null}};
 
 const BOX=new THREE.BoxGeometry(1,1,1),EDGES=new THREE.EdgesGeometry(BOX);
 
 // onProgress({url,name,stage:'download'|'decode'|'done'|'failed',loaded,total}) per file, as bytes arrive.
 // `scale` overrides scene.json metresPerUnit (the URL's ?scale=).
-export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},maxSh=null,concurrency=4,scale=null}={}){
+export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},maxSh=null,concurrency=4,scale=null,signal}={}){
  const {dir,json,key}=resolveSceneUrl(sceneParam);
  onStatus('Loading scene.json');
- let res;try{res=await fetch(json)}catch(e){throw new Error(`Could not fetch ${json}: ${e.message}`)}
+ let res;try{res=await fetch(json,{signal})}catch(e){throw new Error(`Could not fetch ${json}: ${e.message}`)}
  if(!res.ok)throw new Error(`Could not load ${json} (${res.status}). Pass ?scene=<export directory>.`);
- const data=await res.json();
+ let data;try{data=await res.json()}catch{throw new Error(`${json} is not a scene.json (not valid JSON). Pass ?scene=<export directory>.`)}
+ signal?.throwIfAborted();
  const file=name=>new URL(name,dir).href;
 
  const root=new THREE.Group();root.name=data.name??'scene';
@@ -126,20 +129,27 @@ export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},ma
  const gate=createGate(concurrency);
 
  // Everything loads in parallel (a few files at a time); failures of optional files only warn.
- const staticJob=data.static?gate(()=>loadSplats(file(data.static),{wantCentres:true,maxSh,max:20000,onProgress})).then(r=>{tick(data.static);return r}):Promise.resolve(null);
+ const staticJob=data.static?gate(()=>loadSplats(file(data.static),{wantCentres:true,maxSh,max:20000,onProgress,signal})).then(r=>{tick(data.static);return r}):Promise.resolve(null);
  const partJobs=(data.parts??[]).map(async p=>{
   const hasJoint=!!p.joint,f=p.files??{};
   // Without a joint the slot is just its closed state, which is the whole base set.
   const main=hasJoint?(f.part??f.base):(f.base??f.part);
   const [body,reveal,vanish]=await Promise.all([
-   main?gate(()=>optional(file(main),{wantCentres:true,wantAttrs:true,max:100000,maxSh,onProgress},`${p.id} ${main}`)):null,
-   hasJoint&&f.reveal?gate(()=>optional(file(f.reveal),{maxSh,onProgress},`${p.id} reveal`)):null,
-   hasJoint&&f.vanish?gate(()=>optional(file(f.vanish),{maxSh,onProgress},`${p.id} vanish`)):null,
+   main?gate(()=>optional(file(main),{wantCentres:true,wantAttrs:true,max:100000,maxSh,onProgress,signal},`${p.id} ${main}`)):null,
+   hasJoint&&f.reveal?gate(()=>optional(file(f.reveal),{maxSh,onProgress,signal},`${p.id} reveal`)):null,
+   hasJoint&&f.vanish?gate(()=>optional(file(f.vanish),{maxSh,onProgress,signal},`${p.id} vanish`)):null,
   ]);
   tick(p.name??p.id);
   return {p,body,reveal,vanish};
  });
- const [staticRes,partRes]=await Promise.all([staticJob,Promise.all(partJobs)]);
+ // Wait for every job (not the first failure), so an abort or a failed file leaves no half-loaded meshes behind.
+ const settled=await Promise.allSettled([staticJob,...partJobs]);
+ const failed=settled.find(r=>r.status==='rejected');
+ if(failed||signal?.aborted){
+  for(const r of settled)if(r.status==='fulfilled')for(const x of [r.value,r.value?.body,r.value?.reveal,r.value?.vanish])try{x?.mesh?.dispose()}catch{}
+  throw failed?.reason??signal.reason;
+ }
+ const staticRes=settled[0].value,partRes=settled.slice(1).map(r=>r.value);
 
  let staticMesh=null;
  if(staticRes){
@@ -193,14 +203,8 @@ export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},ma
     if(p.vanish)setFade(p.vanish,1-f);
    }
   },
-  dispose(){root.traverse(o=>{if(o instanceof SplatMesh){try{o.dispose()}catch{}}});root.removeFromParent()}};
+  // Frees what the scene owns on the GPU: every SplatMesh's packed splats and the per-part outline/proxy materials.
+  dispose(){root.traverse(o=>{if(o instanceof SplatMesh){try{o.dispose()}catch{}}else if(o.material)o.material.dispose?.()});root.removeFromParent()}};
  scene.updateFades();
  return scene;
-}
-
-// Opacity multiplier on a whole SplatMesh; fully faded ones are hidden so Spark skips them.
-function setFade(mesh,v){
- const o=Math.min(1,Math.max(0,v));
- if(mesh.opacity!==o)mesh.opacity=o;
- const show=o>.003;if(mesh.visible!==show)mesh.visible=show;
 }

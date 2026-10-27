@@ -25,13 +25,32 @@ anywhere that sends CORS headers.
 
 | parameter | meaning |
 | --- | --- |
-| `?scene=<url>` | the export directory (or its `scene.json`); default `scenes/synthetic/` |
+| `?scene=<url>` | the export directory (or its `scene.json`); an explicit value always wins. Default: the `default` of `scenes/index.json`, else `scenes/synthetic/` |
 | `?scale=<m>` | metres per export unit, overriding `scene.json` `metresPerUnit` (default 1) |
 | `?edit` | start in edit mode |
 | `?sh=0..3` | cap the view-dependent colour (spherical harmonics) degree, for speed. **Use `?sh=1` on a Quest** with a real (hundreds of thousands of splats) scene; `?sh=0` if it still drops frames |
 | `?cam=px,py,pz,tx,ty,tz` | starting camera, world coordinates |
 | `?xr=none` or `?xr=x,y,z` | where the scene stands in VR (default: from `scene.json` `view`/`floor` if both are there, else movable parts 0.9 m ahead, floor at y = 0) |
+| `?perf` | expose `window.switchsplatPerf` (`start()` / `stop()`): frame times, Spark regenerations and sorts per second, and frames where a moving part was drawn at a stale pose |
 | `?emulate` | dev server only: install the IWER Meta Quest 3 emulator, so "Enter VR" works in a desktop browser (`window.xrDevice` drives the emulated controllers) |
+
+## Scene list
+
+`public/scenes/index.json` lists the scenes the **Scene** dropdown at the top of the overlay offers:
+
+```json
+{ "version": 1, "default": "car",
+  "scenes": [ { "id": "car", "name": "Car", "path": "scenes/car/", "description": "...", "metresPerUnit": 0.586, "heavy": true } ] }
+```
+
+`heavy` (true, or a string such as `"~110 MB download"`) is shown next to the name. The file is optional: without it
+the viewer loads `?scene=` or `scenes/synthetic/` and shows no dropdown. A `?scene=` that is not in the list appears
+as an extra "Custom: ..." entry. Picking a scene loads it without a page reload: the new scene downloads while the
+old one stays (hidden, with a Cancel button), then the old one is torn down (persistence flushed, hands released,
+edit panel, input listeners, Spark splat arrays) and the new one swaps in. Picking another scene meanwhile aborts the
+download in flight. A failed load shows the error with **Retry** and **Cancel** and leaves the previous scene usable.
+The address bar follows (`?scene=`, with `sh`, `edit`, `perf`... kept and `scale`/`cam`/`xr` dropped), and
+back/forward switch scenes. Poses are remembered per scene.
 
 ## Controls
 
@@ -102,6 +121,13 @@ loading screen; at most four files download and decode at once, static first. No
 frame depends on the splat count: parts move as whole objects, picking and pushing use the oriented boxes only.
 On a Quest add `?sh=1` to the URL.
 
+Spark composes every visible `SplatMesh` into one accumulator that it regenerates (every mesh, on the GPU) whenever
+any mesh's transform or opacity changes, then sorts. Adding or removing a visible mesh changes the accumulator's
+"mapping", and while a mapping change waits for a sort Spark neither regenerates nor shows the new accumulator, so
+a moving part freezes for a whole sort and then jumps (about 0.5 s on a 450k-splat scene). The reveal/vanish
+meshes therefore stay visible at opacity 0 instead of being hidden, which keeps the mapping fixed for the whole
+session.
+
 ## Data format
 
 See `articulation-spec.md` in the SwitchSplat export tooling: `scene.json` plus binary little-endian 3DGS PLYs
@@ -118,7 +144,9 @@ hinge angles are degrees in the file, `up` is rotated onto +Y. A part with `join
 | `src/push.js` | hand sphere against a part's box and the momentum exchange (`pushJoint`), hand velocity |
 | `src/spawn.js`, `src/locomotion.js` | VR spawn from `view`/`floor`/`up`; thumbstick walk and snap turn |
 | `src/drive.js` | grab drive (grip point stored on the part) and the mouse drag-plane target |
-| `src/scene-loader.js` | scene.json + PLYs into Spark `SplatMesh`es, OBB proxies, reveal/vanish fades |
+| `src/scene-loader.js` | scene.json + PLYs into Spark `SplatMesh`es, OBB proxies, reveal/vanish fades (`src/fade.js`) |
+| `src/scenes.js` | the scene list, default selection and `?scene=` URL handling |
+| `src/perf.js` | `?perf` instrumentation |
 | `src/ply-centres.js`, `src/obb.js` | splat centres from a PLY and the PCA/percentile oriented box |
 | `src/desktop-input.js`, `src/xr-input.js` | mouse and controller interaction |
 | `src/edit-mode.js`, `src/hud.js`, `src/persist.js` | edit panel, overlay, saved poses |

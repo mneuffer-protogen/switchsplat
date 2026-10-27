@@ -27,6 +27,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/
 #load-files li.done{opacity:.5}
 #load-files li.failed{color:var(--danger)}
 #hud{position:fixed;top:12px;left:max(16px,env(safe-area-inset-left));width:min(300px,calc(100vw - 32px));max-height:calc(100% - 24px);overflow:auto;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:10}
+#scene-picker{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--muted)}
+#scene-picker select{font:inherit;color:var(--text);background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:8px;padding:4px 6px;min-width:0}
+#scene-picker select option{color:#000}
+#scene-desc{grid-column:1/-1;font-size:11.5px}
+#scene-picker[hidden],#load-actions[hidden],#load-actions button[hidden]{display:none}
 #hud h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em}
 #status{display:block;color:var(--muted);font-size:12px;min-height:1.4em}
 #parts{list-style:none;margin:8px 0;padding:0;display:grid;gap:6px}
@@ -61,8 +66,13 @@ kbd{font:inherit;padding:0 4px;border:1px solid var(--line);border-radius:4px}
 </head>
 <body>
 <canvas id="view" tabindex="0"></canvas>
-<div id="loading"><div id="loading-box"><div id="loading-text">Loading scene</div><ul id="load-files" aria-label="Files loading"></ul></div></div>
+<div id="loading"><div id="loading-box"><div id="loading-text">Loading scene</div><ul id="load-files" aria-label="Files loading"></ul><div id="load-actions" class="row" hidden><button id="load-retry" type="button" hidden>Retry</button><button id="load-cancel" type="button" hidden>Cancel</button></div></div></div>
 <aside id="hud" aria-label="Parts">
+ <div id="scene-picker" hidden>
+  <label for="scene-select">Scene</label>
+  <select id="scene-select"></select>
+  <span id="scene-desc"></span>
+ </div>
  <h1 id="scene-name">SwitchSplat</h1>
  <span id="status" role="status"></span>
  <ul id="parts"></ul>
