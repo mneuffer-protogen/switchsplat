@@ -326,3 +326,21 @@ def ghost_mass(part: Splats, static: Splats, metres: float = 0.04, metres_per_un
     skin = select_skin(part, static, probe, skin_rows)
     alpha = 1.0 / (1.0 + np.exp(-static.opacity[:, 0].astype(np.float64)))
     return float(alpha[skin.mask].sum())
+
+
+def height_above(skin: Splats, points: np.ndarray, metres_per_unit: float = 1.0, up=None) -> np.ndarray:
+    """Metres above (+) or below (-) the closed surface of ``skin`` at the horizontal place of every point.
+
+    The surface is the robust polynomial height field of the skin in its PCA plane; the plane normal is oriented
+    along ``up`` (default: the sign that points away from the part's centroid towards +the normal's first
+    orientation). Content that an opening panel uncovers lies below that surface, so anything well above it is air.
+    """
+    pts = skin.positions.astype(np.float64)
+    centre, vt = _frame(pts)
+    if up is not None and vt[2] @ np.asarray(up, dtype=np.float64) < 0:
+        vt = vt.copy()
+        vt[2] = -vt[2]
+    puv = (pts - centre) @ vt.T
+    surface, _ = fit_surface(puv[:, :2], puv[:, 2])
+    quv = (np.asarray(points, dtype=np.float64) - centre) @ vt.T
+    return (quv[:, 2] - surface(quv[:, :2])) * metres_per_unit

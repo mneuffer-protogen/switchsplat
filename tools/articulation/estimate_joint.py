@@ -47,7 +47,7 @@ from scipy.spatial import cKDTree
 
 from .export_parts import membership_path
 from .fuse import fuse_open_pose
-from .recruit import RecruitParams, recruit_scene, restore_static
+from .recruit import RecruitParams, height_above, recruit_scene, restore_static, select_skin
 from .geometry import apply, hinge_transform, rodrigues, rotation_to_axis_angle
 from .ply_io import Splats, read_ply, write_ply
 
@@ -760,7 +760,8 @@ def load_membership(scene_dir: Path, slot_id: str, n_base: int, n_switched: int)
 def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: int = 0, up=None,
                  trim: bool = True, fuse: bool = True, fuse_reach: float = FUSE_REACH_SPACINGS,
                  fuse_dup: float = FUSE_DUP_SPACINGS, fuse_sh: bool = True, inner: str = "auto",
-                 metres_per_unit: float = 1.0, reveal_max_size: float = REVEAL_MAX_SIZE_M) -> str:
+                 metres_per_unit: float = 1.0, reveal_max_size: float = REVEAL_MAX_SIZE_M,
+                 options: dict | None = None, scene_up=None) -> str:
     """Estimate one part, write its PLYs and update ``part`` in place. Returns a summary line."""
     files = part["files"]
     base = read_ply(scene_dir / files["base"])
@@ -785,6 +786,18 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
 
     if inner not in INNER_MODES:
         raise ValueError(f"inner must be one of {INNER_MODES}, got {inner!r}")
+    options = dict(part.get("pipeline") or {}, **(options or {}))
+    if options.get("vanish_to_part") and (~part_mask).any():
+        # closed-only gaussians lying on the part's own skin (they failed the registration only because the open scan
+        # sampled the panel differently) belong to the panel: they would otherwise fade out right at the start of travel
+        # and leave the moving skin thinner than the closed one
+        loose = np.flatnonzero(~part_mask)
+        hit = select_skin(base.subset(part_mask), base.subset(loose),
+                          RecruitParams(metres_per_unit=metres_per_unit, colour=1.0e9, angle=90.0,
+                                        min_height=float(options["vanish_to_part"]), max_height=float(options["vanish_to_part"]),
+                                        edge=0.0)).mask
+        part_mask = part_mask.copy()
+        part_mask[loose[hit]] = True
     part_base = base.subset(part_mask)
     if inner == "auto":  # an opaque skin hides the inner face when closed; a translucent one (hood, glass) does not
         alpha = 1.0 / (1.0 + np.exp(-base.opacity[:, 0].astype(np.float64)))  # of the whole closed sample
@@ -809,12 +822,27 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
             reveal_mask[fusion.extra_index] = True
         if int(reveal_mask.sum()) < max(MIN_SET, 0.01 * len(reveal_mask)):
             reveal_mask[:] = False
+    if options.get("reveal_above") is not None and reveal_mask.any():
+        # nothing uncovered by a lifting panel lies far ABOVE its closed surface: that is air (trails, floaters)
+        dh = height_above(part_base, switched.positions[reveal_mask].astype(np.float64), metres_per_unit, scene_up)
+        keep = np.ones(len(switched), dtype=bool)
+        keep[np.flatnonzero(reveal_mask)[dh > float(options["reveal_above"])]] = False
+        reveal_mask &= keep
     pieces = {"attach": (near, inner_splats, extra), "part": (extra,)}.get(inner, ())
     if reveal_max_size > 0 and reveal_mask.any():  # big soft floaters of the open state smear when they fade in
         size = np.exp(switched.scale.astype(np.float64)).max(axis=1) * metres_per_unit
         reveal_mask &= size <= reveal_max_size
     carried = [x for x in pieces if len(x)]
-    attached = Splats.concat(carried) if carried else None  # rides on the part, fades in with the "panel" curve
+    attached = Splats.concat(carried) if carried else None
+    if options.get("fog_alpha") is not None:  # large faint splats of the open-pose copy only blur it
+        def clear(sp):
+            a = 1.0 / (1.0 + np.exp(-sp.opacity[:, 0].astype(np.float64)))
+            big = np.exp(sp.scale.astype(np.float64)).max(axis=1) > float(options.get("fog_size", 3.0)) * np.median(
+                np.exp(sp.scale.astype(np.float64)).max(axis=1))
+            return ~((a < float(options["fog_alpha"])) & big)
+        if attached is not None:
+            attached = attached.subset(clear(attached))
+        reveal_mask &= clear(switched) if reveal_mask.any() else reveal_mask  # rides on the part, fades in with the "panel" curve
     if inner == "attach":
         near = inner_splats = empty  # nothing of the open-pose copy is drawn when closed
     body = [part_base, near] + ([inner_splats] if inner == "part" else [])
@@ -905,6 +933,13 @@ def main(argv: list[str] | None = None) -> None:
                         help="move the static gaussians that lie on a part's closed skin into the part (rows leave "
                              "static.ply, so the closed render is unchanged and no ghost of the panel stays behind); "
                              "--no-recruit puts them back (default on)")
+    parser.add_argument("--part-option", action="append", default=[], metavar="SLOT:KEY=VALUE",
+                        help="per-part setting stored in scene.json (part.pipeline) and used by later runs: "
+                             "reveal_above=M drops reveal gaussians more than M metres above the part's closed surface "
+                             "(air: trails and floaters of the open state), vanish_to_part=M moves closed-only gaussians "
+                             "within M metres of the part's skin into the part, fog_alpha=A [fog_size=K] drops faint (alpha < A) "
+                             "splats larger than K x median (default 3) from the part's open-pose copy and its reveal. "
+                             "Repeatable, e.g. --part-option slot03:reveal_above=0.12; VALUE none removes it")
     parser.add_argument("--recruit-panel", action="store_true",
                         help="use the open-pose panel mapped back to the closed pose as the recruitment template "
                              "(sharper outline, but pulls in bodywork at the hinge on the car; default: the closed skin)")
@@ -921,6 +956,18 @@ def main(argv: list[str] | None = None) -> None:
 
     scene_path = args.scene_dir / "scene.json"
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
+    for item in args.part_option:
+        target, _, setting = item.partition(":")
+        key, _, value = setting.partition("=")
+        part = next((p for p in scene["parts"] if p["id"] == target), None)
+        if part is None or not key:
+            parser.error(f"--part-option {item!r}: expected SLOT:KEY=VALUE with a slot of this scene")
+        if value.lower() in ("none", ""):
+            part.get("pipeline", {}).pop(key, None)
+        else:
+            part.setdefault("pipeline", {})[key] = float(value)
+        if not part.get("pipeline"):
+            part.pop("pipeline", None)
     wanted = None if args.slots is None else {f"slot{s:02d}" for s in args.slots}
     done = set()
     for part in scene["parts"]:
@@ -928,7 +975,8 @@ def main(argv: list[str] | None = None) -> None:
             continue
         print(process_part(args.scene_dir, part, inlier, args.seed, scene.get("up"), args.trim,
                            fuse=args.fuse, fuse_reach=args.fuse_reach, fuse_dup=args.fuse_dup, fuse_sh=args.fuse_sh,
-                           inner=args.inner, metres_per_unit=float(scene.get("metresPerUnit", 1.0))),
+                           inner=args.inner, metres_per_unit=float(scene.get("metresPerUnit", 1.0)),
+                           scene_up=scene.get("up")),
               flush=True)
         done.add(part["id"])
     if args.merge:
