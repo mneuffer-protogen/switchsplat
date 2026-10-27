@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from scipy.optimize import minimize
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 from .geometry import apply, hinge_transform, rodrigues, rotation_to_axis_angle
@@ -35,6 +37,15 @@ SWEEP_SAMPLES = 1500  # base points used for the hypothesis sweep (cheaper than 
 MIN_SET = 50  # vanish / reveal sets smaller than this (or 1% of their parent) are noise
 NUM_REFINED = 6
 SMALL_PART_DIAGONAL = 1.2  # metres; below this a part gets the "cabinet door" mass
+AXIS_SNAP_DEG = 15.0  # a hinge axis this close to vertical / horizontal is snapped to it
+PLANE_OFFSET_SPACINGS = 4.0  # ... and only when the pivot is further than this many spacings off the plane
+THIN_PLANE_RATIO = 0.35  # smallest / middle singular value below which a base set counts as a thin sheet
+SNAP_TOLERANCE_SPACINGS = 0.25  # a pivot snap may worsen the score by this many median spacings
+MERGE_AXIS_DEG = 8.0  # parts whose axes differ by less than this (same sign) may be the same joint
+MERGE_LINE_DIST = 0.08  # ... and whose hinge lines pass this close to each other near the part (metres)
+MERGE_DEDUP = 0.005  # gaussians of the second slot closer than this to one of the first are dropped (metres)
+MERGE_MIN_OVERLAP = 0.2  # the closed poses must overlap: fraction of the smaller base set near the other
+CLUSTER_LINK_SPACINGS = 5.0  # base points closer than this many median spacings belong to one cluster
 
 
 @dataclass
@@ -244,9 +255,104 @@ def rigid_to_joint(matcher: Matcher, rot: np.ndarray, trans: np.ndarray) -> Part
     return PartFit("slider", axis, centroid, dist, np.eye(3), dist * axis, 0.0, cost_slide(dist))
 
 
-def fit_part(base: Splats, switched: Splats, seed: int = 0) -> PartFit:
+def snap_axis_to_gravity(matcher: Matcher, fit: PartFit, up: np.ndarray | None) -> PartFit:
+    """Prefer a vertical or exactly horizontal hinge axis when the data cannot tell it from the fitted one.
+
+    Doors turn about the up axis, hoods, hatches and lids about a horizontal one; a free 6-DOF fit of noisy
+    gaussians tilts the axis by a few degrees. When the fitted axis is within AXIS_SNAP_DEG of the up vector
+    (or of its horizontal projection) the hinge is re-fitted with that axis fixed (pivot and angle by
+    Nelder-Mead on the registration score) and kept if the score is not worse by more than a fraction of the
+    point spacing.
+    """
+    if fit.kind != "hinge" or up is None:
+        return fit
+    up = np.asarray(up, dtype=np.float64)
+    up = up / np.linalg.norm(up)
+    axis = fit.axis
+    candidates = [up * np.sign(axis @ up)]
+    flat = axis - (axis @ up) * up
+    if np.linalg.norm(flat) > 1e-6:
+        candidates.append(flat / np.linalg.norm(flat))
+    centroid = matcher.base_pos.mean(axis=0)
+    spacing = median_spacing(matcher.base_pos)
+    best = fit
+    for target in candidates:
+        tilt = np.degrees(np.arccos(np.clip(axis @ target, -1.0, 1.0)))
+        if tilt < 1e-3 or tilt > AXIS_SNAP_DEG:
+            continue
+        e1 = np.cross(target, [1.0, 0.0, 0.0] if abs(target[0]) < 0.9 else [0.0, 1.0, 0.0])
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(target, e1)
+        start = fit.pivot + ((centroid - fit.pivot) @ axis) * axis  # point of the old axis nearest the centroid
+
+        def cost(params: np.ndarray) -> float:
+            r, t = hinge_transform(target, start + params[1] * e1 + params[2] * e2, params[0])
+            return matcher.score(r, t)
+
+        x0 = np.array([np.deg2rad(fit.open), 0.0, 0.0])
+        steps = np.array([np.deg2rad(3.0), 0.02 * matcher.diagonal, 0.02 * matcher.diagonal])
+        simplex = np.vstack([x0] + [x0 + np.diag(steps)[i] for i in range(3)])
+        result = minimize(cost, x0, method="Nelder-Mead",
+                          options={"initial_simplex": simplex, "xatol": 1e-4, "fatol": 1e-6, "maxiter": 400})
+        if result.fun > fit.score + SNAP_TOLERANCE_SPACINGS * spacing:
+            continue
+        pivot = start + result.x[1] * e1 + result.x[2] * e2
+        r, t = hinge_transform(target, pivot, result.x[0])
+        new_axis, new_angle = (target, result.x[0]) if result.x[0] >= 0 else (-target, -result.x[0])  # open is positive
+        best = PartFit("hinge", new_axis, pivot, float(np.degrees(new_angle)), r, t, fit.screw, float(result.fun))
+        break  # the vertical axis (first candidate) wins over the horizontal projection
+    return best
+
+
+def snap_pivot_to_plane(matcher: Matcher, fit: PartFit) -> PartFit:
+    """Resolve the pivot ambiguity of a thin part (hood, hatch, door skin) by putting the hinge in its plane.
+
+    A thin sheet that is registered onto its open pose constrains the rotation angle and the axis direction,
+    but not where along the sheet the pivot sits: every centre on the angle bisector of the closed and open
+    planes maps the closed sheet onto the same open sheet, and a partial or narrow sample of the sheet cannot tell
+    them apart. Physically the hinge lies at the part's edge, in the plane of the closed sheet, and that is the
+    single member of the family that does. The snap is applied only when the axis runs along the sheet, the
+    fitted pivot is clearly off the sheet's plane, and the registration score stays as good as before.
+    """
+    if fit.kind != "hinge":
+        return fit
+    pts = matcher.base_pos
+    centroid = pts.mean(axis=0)
+    _, sing, vt = np.linalg.svd(pts - centroid, full_matrices=False)
+    normal = vt[2]
+    if sing[2] > THIN_PLANE_RATIO * sing[1] or abs(fit.axis @ normal) > 0.5:
+        return fit
+    theta = np.deg2rad(fit.open)
+    rot = rodrigues(fit.axis, theta)
+    along = np.cross(normal, fit.axis)
+    along /= np.linalg.norm(along)
+    w = np.linalg.pinv(np.eye(3) - rot, rcond=1e-2) @ (rot @ along)  # pivot shift that slides the open sheet in-plane
+    denom = float(normal @ w)
+    if abs(denom) < 1e-6:
+        return fit
+    offset = float(normal @ (fit.pivot - centroid))
+    if abs(offset) < max(PLANE_OFFSET_SPACINGS * median_spacing(pts), 0.03 * matcher.diagonal):
+        return fit  # already (nearly) in the plane: the data pinned it down
+    shift = -offset / denom
+    pivot = fit.pivot + shift * w
+    if np.linalg.norm(pivot - fit.pivot) > 1.5 * matcher.diagonal:
+        return fit
+
+    def cost(angle: float) -> float:
+        r, t = hinge_transform(fit.axis, pivot, angle)
+        return matcher.score(r, t)
+
+    angle = golden_minimize(cost, theta - np.deg2rad(4.0), theta + np.deg2rad(4.0))
+    new_score = cost(angle)
+    if new_score > fit.score + SNAP_TOLERANCE_SPACINGS * median_spacing(pts):
+        return fit
+    r, t = hinge_transform(fit.axis, pivot, angle)
+    return PartFit("hinge", fit.axis, pivot, float(np.degrees(angle)), r, t, fit.screw, new_score)
+
+
+def fit_part(base: Splats, switched: Splats, seed: int = 0, up=None) -> PartFit:
     rng = np.random.default_rng(seed)
-    matcher = Matcher(base, switched, rng)
+    matcher = Matcher(base.subset(largest_cluster(base.positions.astype(np.float64))), switched, rng)
     hypotheses = sweep(matcher)[:NUM_REFINED]
     best: PartFit | None = None
     for score, kind, axis, pivot, param in hypotheses:
@@ -260,7 +366,7 @@ def fit_part(base: Splats, switched: Splats, seed: int = 0) -> PartFit:
             best = fit
     assert best is not None
     best.score = float(best.score)
-    return best
+    return snap_pivot_to_plane(matcher, snap_axis_to_gravity(matcher, best, up))
 
 
 # --------------------------------------------------------------------------------------------
@@ -272,6 +378,24 @@ def median_spacing(points: np.ndarray) -> float:
         return 0.0
     dist, _ = cKDTree(points).query(points, k=2, workers=-1)
     return float(np.median(dist[:, 1]))
+
+
+def largest_cluster(points: np.ndarray, link_factor: float = CLUSTER_LINK_SPACINGS) -> np.ndarray:
+    """Boolean mask of the biggest connected cluster (points closer than ``link_factor`` x the median spacing).
+
+    Real part sets carry stray floaters far from the body; they stretch the bounding box the hinge
+    hypotheses are built from and drag the fit, so the fit only sees the main cluster.
+    """
+    n = len(points)
+    if n < 10:
+        return np.ones(n, dtype=bool)
+    radius = link_factor * median_spacing(points)
+    if radius <= 0.0:
+        return np.ones(n, dtype=bool)
+    tree = cKDTree(points)
+    graph = tree.sparse_distance_matrix(tree, radius, output_type="coo_matrix")
+    _, labels = connected_components(graph, directed=False)
+    return labels == np.argmax(np.bincount(labels))
 
 
 def smooth_labels(points: np.ndarray, labels: np.ndarray, k: int = 9, rounds: int = 2) -> np.ndarray:
@@ -335,6 +459,142 @@ def clean_split(split: SplitResult) -> tuple[np.ndarray, np.ndarray]:
 
 
 # --------------------------------------------------------------------------------------------
+# Merging slots that are the same physical part
+# --------------------------------------------------------------------------------------------
+
+def _unit(v) -> np.ndarray:
+    v = np.asarray(v, dtype=np.float64)
+    return v / np.linalg.norm(v)
+
+
+def axis_line_gap(pivot_a, axis_a, pivot_b, axis_b, near) -> float:
+    """Distance between two hinge lines measured around the point ``near`` (the closed part)."""
+    near = np.asarray(near, dtype=np.float64)
+    points = []
+    for pivot, axis in ((pivot_a, axis_a), (pivot_b, axis_b)):
+        pivot, axis = np.asarray(pivot, dtype=np.float64), _unit(axis)
+        points.append(pivot + ((near - pivot) @ axis) * axis)
+    return float(np.linalg.norm(points[0] - points[1]))
+
+
+def base_overlap(base_a: np.ndarray, base_b: np.ndarray, radius: float) -> float:
+    """Fraction of the smaller base set that has a neighbour of the other set within ``radius``."""
+    small, large = (base_a, base_b) if len(base_a) <= len(base_b) else (base_b, base_a)
+    if len(small) == 0:
+        return 0.0
+    dist, _ = cKDTree(large).query(small, k=1, workers=-1)
+    return float((dist <= radius).mean())
+
+
+def joints_compatible(joint_a: dict | None, joint_b: dict | None, base_a: np.ndarray, base_b: np.ndarray,
+                      axis_deg: float = MERGE_AXIS_DEG, line_dist: float = MERGE_LINE_DIST,
+                      min_overlap: float = MERGE_MIN_OVERLAP) -> bool:
+    """Are two fitted joints the same physical joint of the same part?
+
+    Same kind, axes within ``axis_deg`` with the same sign (so the open direction agrees), for hinges the
+    axis lines within ``line_dist`` of each other around the closed part, and the closed poses overlapping.
+    """
+    if joint_a is None or joint_b is None or joint_a["kind"] != joint_b["kind"]:
+        return False
+    axis_a, axis_b = _unit(joint_a["axis"]), _unit(joint_b["axis"])
+    if np.degrees(np.arccos(np.clip(axis_a @ axis_b, -1.0, 1.0))) > axis_deg:
+        return False
+    if joint_a["kind"] == "hinge":
+        near = np.median(np.concatenate([base_a, base_b]), axis=0)
+        if axis_line_gap(joint_a["pivot"], axis_a, joint_b["pivot"], axis_b, near) > line_dist:
+            return False
+    spacing = max(median_spacing(base_a), median_spacing(base_b))
+    return base_overlap(base_a, base_b, 4.0 * spacing) >= min_overlap
+
+
+def dedupe_against(new: Splats, existing: Splats, tol: float = MERGE_DEDUP) -> np.ndarray:
+    """Mask of the ``new`` gaussians that have no ``existing`` gaussian closer than ``tol``."""
+    if len(new) == 0 or len(existing) == 0:
+        return np.ones(len(new), dtype=bool)
+    dist, _ = cKDTree(existing.positions.astype(np.float64)).query(new.positions.astype(np.float64), k=1, workers=-1)
+    return dist >= tol
+
+
+def union_splats(first: Splats | None, second: Splats | None, tol: float = MERGE_DEDUP) -> Splats | None:
+    """``first`` plus the gaussians of ``second`` that duplicate none of them (either may be None)."""
+    if first is None or len(first) == 0:
+        return second
+    if second is None or len(second) == 0:
+        return first
+    return Splats.concat([first, second.subset(dedupe_against(second, first, tol))])
+
+
+PART_FILE_KEYS = ("base", "switched", "part", "reveal", "vanish")
+
+
+def merge_two(a: dict, b: dict, scene_dir: Path) -> None:
+    """Fold part ``b`` into part ``a`` (both estimated): write the unions under a's file names, delete b's."""
+    sets_a = {k: read_ply(scene_dir / a["files"][k]) if a["files"].get(k) else None for k in PART_FILE_KEYS}
+    sets_b = {k: read_ply(scene_dir / b["files"][k]) if b["files"].get(k) else None for k in PART_FILE_KEYS}
+    merged = {k: union_splats(sets_a[k], sets_b[k]) for k in PART_FILE_KEYS}
+    if merged["vanish"] is not None and merged["part"] is not None:  # part in one slot means not vanishing
+        merged["vanish"] = merged["vanish"].subset(dedupe_against(merged["vanish"], merged["part"]))
+        if len(merged["vanish"]) == 0:
+            merged["vanish"] = None
+    joint_a, joint_b = a["joint"], b["joint"]
+    best = joint_a if joint_a["fit"]["inlierRatio"] >= joint_b["fit"]["inlierRatio"] else joint_b
+    count_a, count_b = len(sets_a["part"]), len(sets_b["part"])
+    joint = dict(best)
+    joint["open"] = joint["max"] = max(joint_a["open"], joint_b["open"])
+    joint["min"] = min(joint_a.get("min", 0), joint_b.get("min", 0))
+    rmse = (joint_a["fit"]["rmse"] * count_a + joint_b["fit"]["rmse"] * count_b) / max(count_a + count_b, 1)
+    joint["fit"] = {
+        "rmse": round(rmse, 5),
+        "inlierRatio": round(min(len(merged["part"]) / max(len(merged["base"]), 1), 1.0), 4),
+        "screw": round(max(joint_a["fit"]["screw"], joint_b["fit"]["screw"]), 5),
+    }
+    for key, splats in merged.items():
+        name = a["files"].get(key) or f"{a['id']}_{key}.ply"
+        if splats is None:
+            a["files"][key] = None
+            (scene_dir / name).unlink(missing_ok=True)
+        else:
+            write_ply(scene_dir / name, splats)
+            a["files"][key] = name
+    for key in PART_FILE_KEYS:
+        if b["files"].get(key) and b["files"][key] != a["files"].get(key):
+            (scene_dir / b["files"][key]).unlink(missing_ok=True)
+    a["joint"] = joint
+    a["merged"] = list(a.get("merged", [])) + [b["id"]] + list(b.get("merged", []))
+
+
+def merge_parts(scene_dir: Path, scene: dict, only: set[str] | None = None) -> list[str]:
+    """Merge compatible parts of ``scene`` in place (and on disk); returns one summary line per merge.
+
+    Slots may be the same physical part opened in separate episodes (a door opened twice): they share
+    the hinge but are separate slots. ``only`` restricts the candidates to those part ids.
+    """
+    lines = []
+    parts = scene["parts"]
+    merged_one = True
+    while merged_one:
+        merged_one = False
+        for i, a in enumerate(parts):
+            for b in parts[i + 1:]:
+                if a.get("joint") is None or b.get("joint") is None:
+                    continue
+                if only is not None and (a["id"] not in only or b["id"] not in only):
+                    continue
+                base_a = read_ply(scene_dir / a["files"]["base"]).positions.astype(np.float64)
+                base_b = read_ply(scene_dir / b["files"]["base"]).positions.astype(np.float64)
+                if not joints_compatible(a["joint"], b["joint"], base_a, base_b):
+                    continue
+                merge_two(a, b, scene_dir)
+                parts.remove(b)
+                lines.append(f"merged {b['id']} into {a['id']} ({a.get('name', '')}): open={a['joint']['open']}")
+                merged_one = True
+                break
+            if merged_one:
+                break
+    return lines
+
+
+# --------------------------------------------------------------------------------------------
 # Scene I/O
 # --------------------------------------------------------------------------------------------
 
@@ -353,12 +613,12 @@ def _round(values, digits: int = 5) -> list[float]:
     return [round(float(v), digits) for v in values]
 
 
-def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: int = 0) -> str:
+def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: int = 0, up=None) -> str:
     """Estimate one part, write its PLYs and update ``part`` in place. Returns a summary line."""
     files = part["files"]
     base = read_ply(scene_dir / files["base"])
     switched = read_ply(scene_dir / files["switched"])
-    fit = fit_part(base, switched, seed)
+    fit = fit_part(base, switched, seed, up)
     split = split_inliers(base, switched, fit.rot, fit.trans, inlier_dist)
     part_mask, reveal_mask = clean_split(split)
 
@@ -377,10 +637,14 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
             write_ply(scene_dir / name, splats)
             files[key] = name
 
+    part_centre = base.positions[part_mask].astype(np.float64).mean(axis=0)
+    pivot = fit.pivot
+    if fit.kind == "hinge":  # any point of the hinge line will do: report the one nearest the part
+        pivot = pivot + ((part_centre - pivot) @ fit.axis) * fit.axis
     joint = {
         "kind": fit.kind,
         "axis": _round(fit.axis),
-        "pivot": _round(fit.pivot),
+        "pivot": _round(pivot),
         "min": 0,
         "max": round(fit.open, 4),
         "open": round(fit.open, 4),
@@ -402,16 +666,23 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--slots", type=int, nargs="*", default=None, help="1-based slot numbers (default: all)")
     parser.add_argument("--inlier-dist", default="auto", help="'auto' (2.5x median spacing) or a distance in metres")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--merge", action=argparse.BooleanOptionalAction, default=True,
+                        help="merge slots that turn out to be the same hinge / slider of the same part (default on)")
     args = parser.parse_args(argv)
     inlier = None if args.inlier_dist == "auto" else float(args.inlier_dist)
 
     scene_path = args.scene_dir / "scene.json"
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
     wanted = None if args.slots is None else {f"slot{s:02d}" for s in args.slots}
+    done = set()
     for part in scene["parts"]:
         if wanted is not None and part["id"] not in wanted:
             continue
-        print(process_part(args.scene_dir, part, inlier, args.seed), flush=True)
+        print(process_part(args.scene_dir, part, inlier, args.seed, scene.get("up")), flush=True)
+        done.add(part["id"])
+    if args.merge:
+        for line in merge_parts(args.scene_dir, scene, done):
+            print(line, flush=True)
     scene_path.write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
 
 

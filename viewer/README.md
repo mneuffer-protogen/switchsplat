@@ -3,8 +3,8 @@
 A WebXR Gaussian-splat viewer for SwitchSplat scenes in which each movable part (door, cabinet door,
 drawer) is a persistent rigid object on a 1-DOF joint. Built with Vite, three.js and
 [Spark](https://sparkjs.dev) (`@sparkjsdev/spark`). The joint physics is a cannon-free port of
-Alyx-Physics' `JointedPart`: click animates a part open or shut, drag (or a VR grip) swings or slides it with
-momentum, friction, end stops and a latch.
+Alyx-Physics' `JointedPart`: click swings a part open or shut, drag (or a VR grip) swings or slides it with
+momentum, friction, end stops and a latch, a hand can push it, and it can be locked.
 
 ## Run
 
@@ -13,7 +13,7 @@ npm install
 npm run dev:http            # http://localhost:5198, local browser testing
 npm run dev -- --host       # https://<lan-ip>:5198 (self-signed) for a headset
 npm run build               # static site in dist/
-npm test                    # joint, OBB and PLY tests (node:test, no browser)
+npm test                    # joint, push, lock, spawn, OBB and PLY tests (node:test, no browser)
 ```
 
 Both dev servers use port 5198 with `strictPort`; stop whatever else is on it first.
@@ -27,24 +27,67 @@ anywhere that sends CORS headers.
 | --- | --- |
 | `?scene=<url>` | the export directory (or its `scene.json`); default `scenes/synthetic/` |
 | `?edit` | start in edit mode |
-| `?sh=0..3` | cap the view-dependent colour (spherical harmonics) degree, for speed |
+| `?sh=0..3` | cap the view-dependent colour (spherical harmonics) degree, for speed. **Use `?sh=1` on a Quest** with a real (hundreds of thousands of splats) scene; `?sh=0` if it still drops frames |
 | `?cam=px,py,pz,tx,ty,tz` | starting camera, world coordinates |
-| `?xr=none` or `?xr=x,y,z` | where the scene stands in VR (default: movable parts 0.9 m ahead, floor at y = 0) |
+| `?xr=none` or `?xr=x,y,z` | where the scene stands in VR (default: from `scene.json` `view`/`floor` if both are there, else movable parts 0.9 m ahead, floor at y = 0) |
 | `?emulate` | dev server only: install the IWER Meta Quest 3 emulator, so "Enter VR" works in a desktop browser (`window.xrDevice` drives the emulated controllers) |
 
 ## Controls
 
-- Desktop: hover outlines a part. **Click** (moved under 5 px) animates it to its other end. **Drag** a
+- Desktop: hover outlines a part. **Click** (moved under 5 px) swings it to its other end. **Drag** a
   part to take hold of it where you clicked: it swings about its hinge or slides along its rail, and keeps its
-  momentum when you let go. Drag empty space to orbit, right-drag to pan, wheel to zoom. The panel lists the
-  parts with open/close buttons and the state in percent; **Reset** closes everything.
+  momentum when you let go. **Shift + move the mouse** over a part pushes it. Drag empty space to orbit,
+  right-drag to pan, wheel to zoom. The panel lists the parts with open/close and lock buttons and the state in
+  percent; **Reset** closes everything.
 - VR: **grip** (squeeze) with the controller inside, or within 6 cm of, a part to grab it; release to let go.
-  **Trigger** on or pointing at a part toggles it. Haptics on grab, end stops and the latch.
+  **Trigger** on or pointing at a part toggles it. Each controller carries a small translucent **hand sphere**
+  (4.5 cm) that pushes any part it is not holding, with or without the grip squeezed. **Left thumbstick**
+  walks in the floor plane, **right thumbstick** snap-turns by 30 degrees.
+  Haptics: grab, end stops, the latch, a hard shut (slam), a pulse on contact scaled by how fast the hand hit,
+  and a long firm one when a locked part is grabbed or clicked.
 - Edit mode (checkbox, or `?edit`): a panel per part (kind, min/max/open, friction, friction torque, latch,
-  mass, a `q` scrub slider), an orange pivot marker with a gizmo to move the pivot and turn the axis, and
-  **Download scene.json** for the edited scene. Parts with a weak joint fit (`inlierRatio < 0.6`) carry a
+  mass, locked, a `q` scrub slider), an orange pivot marker with a gizmo to move the pivot and turn the axis,
+  and **Download scene.json** for the edited scene. Parts with a weak joint fit (`inlierRatio < 0.6`) carry a
   "low fit" badge.
-- Where each part was left is saved in `localStorage` (per scene URL and part id) and restored on reload.
+- Where each part was left, and whether it is locked, is saved in `localStorage` (per scene URL and part id) and
+  restored on reload. The lock is only stored when it differs from `joint.locked` in `scene.json`.
+
+### Physics in a few lines
+
+- **Latch.** A part that comes to rest within `latch` of its closed stop latches: its limits close to a hair
+  past the stop. It is released only by a **grab** held for 0.25 s (Alyx `doorLatch`: a hand on the handle),
+  or by the click/trigger animation. Pushing never unlatches. Closing a part latches it again, also when it is
+  slammed shut (it stops dead on the stop, latches, and the hand feels an extra bump).
+- **Lock.** `joint.locked` (scene.json, the panel's Lock button, edit mode) pins a part where it stands. Grabbing
+  it, clicking it or animating it only **jiggles** it (about 1.5 degrees or 5 mm, decaying over 0.45 s, a haptic
+  0.5 for 0.12 s); pushes do nothing. Unlock and it moves, and latches if it is shut.
+- **Contact set** (`src/contact.js`). Grab, push and pick use the part's real splat centres, not its box (on a sparse
+  scan the box is metres wide). At load, splats with opacity < 0.15, a largest scale > 0.15 m, or fewer than 3 neighbours
+  within 8 cm are dropped; the rest go in a 10 cm hash grid (at most 8000 points). A hand grabs a part when its grip
+  is within 7 cm of a centre (nearest part wins); the mouse ray and the controller's pointing ray hit centres as
+  spheres of 4 / 5 cm. The box (5..95 % trims of the kept centres) is only the hover outline and the mass estimate.
+- **Push** (`src/push.js`). The hand sphere is an infinite-mass body. Each fixed step: touching when within hand radius
+  + 2.5 cm of a centre; contact point = that centre as posed now, normal = the part's thin PCA axis turned with the
+  part and signed toward the hand (hand-to-centre direction when the part is not sheet-like, smallest/middle
+  variance > 0.35). Then (a box is used only for parts with no contact set): `jn` = how fast the surface moves along the
+  normal per unit of joint speed (`axis x (p - pivot) . n` for a hinge, `axis . n` for a slider). If the hand
+  closes on the surface faster than the surface gives way (`sB < sP`), the joint speed becomes `sB / jn`
+  (Alyx `holdContacts` with `invMass = 0`), capped (6 rad/s, 3 m/s) and cut to what the limits allow: a latched or
+  locked part, or one at its stop, stays put and the hand just stops. A push interrupts a click animation.
+- **Swing open.** Click/trigger/Reset use `animateTo(q,{style:'swing'})`: unlatch, a starting shove of 30 % of the
+  speed that would just reach the target, then the critically damped drive eases into the end (it cannot
+  overshoot, and a grab or a push takes over). Its settling time is sized by the part: about 0.9 s for a car
+  door, 0.6 s for a cabinet door, 0.45 s for a drawer.
+
+### Real scenes
+
+`scene.json` may carry `view` (`position`, `target`, the initial desktop camera), `floor` (a point on the ground
+plane) and, per part, `merged` (`["slot02","slot03"]`, shown in the panel as "merged from ..."). With both `view`
+and `floor`, entering VR puts the floor at y = 0 and you standing at `view.position` dropped to the floor, facing
+`view.target` horizontally. Big PLYs (100+ MB) show per-file progress (bytes received, then "decoding") on the
+loading screen; at most four files download and decode at once, static first. Nothing the viewer does per
+frame depends on the splat count: parts move as whole objects, picking and pushing use the oriented boxes only.
+On a Quest add `?sh=1` to the URL.
 
 ## Data format
 
@@ -57,7 +100,10 @@ hinge angles are degrees in the file, `up` is rotated onto +Y. A part with `join
 
 | file | role |
 | --- | --- |
-| `src/joint.js` | `JointedPart` (reduced-coordinate hinge/slider, latch, `drag`, `animateTo`), `FixedStepper` |
+| `src/joint.js` | `JointedPart` (reduced-coordinate hinge/slider, latch, lock and jiggle, `drag`, `animateTo`), `FixedStepper` |
+| `src/contact.js` | contact set: filtering, grid, nearest/ray queries, grab and pick helpers |
+| `src/push.js` | hand sphere against a part's box and the momentum exchange (`pushJoint`), hand velocity |
+| `src/spawn.js`, `src/locomotion.js` | VR spawn from `view`/`floor`/`up`; thumbstick walk and snap turn |
 | `src/drive.js` | grab drive (grip point stored on the part) and the mouse drag-plane target |
 | `src/scene-loader.js` | scene.json + PLYs into Spark `SplatMesh`es, OBB proxies, reveal/vanish fades |
 | `src/ply-centres.js`, `src/obb.js` | splat centres from a PLY and the PCA/percentile oriented box |

@@ -4,8 +4,10 @@
 // hinge, metres for a slider) and its speed qd, so friction, springs, limits and the latch all act on
 // that single number and the part's pose is set exactly from it (nothing can drift).
 //
-// Dropped from the original: contact projection, holdContacts, pushSpeed, writeVelocity, gravity.
-// Added: `animateTo` (a critically damped drive for click-to-open) and `applyPose` onto an Object3D.
+// Dropped from the original: contact projection, pushSpeed, writeVelocity, gravity. (holdContacts lives
+// on as `pushJoint` in push.js: a hand is the only thing that touches the part.)
+// Added: `animateTo` (a critically damped drive for click-to-open, optionally with an initial kick), a
+// `locked` state with a handle jiggle (Alyx doorLatch), `applyPose` onto an Object3D.
 import * as THREE from 'three';
 import {DEG,clamp,inverseLerp} from './math.js';
 
@@ -13,6 +15,8 @@ export const HINGE='hinge',SLIDER='slider';
 // The joint is integrated at a fixed rate, whatever the frame rate; slow frames cap at MAX_SUBSTEPS
 // so a hitch cannot snowball into a stall.
 export const STEP=1/90,MAX_SUBSTEPS=4;
+// The handle rattle of a locked part: amplitude, frequency, decay and length.
+const JIGGLE_DEG=1.5,JIGGLE_M=.005,JIGGLE_HZ=9,JIGGLE_TAU=.13,JIGGLE_TIME=.45;
 
 export class FixedStepper{
  constructor({step=STEP,maxSubsteps=MAX_SUBSTEPS}={}){this.step=step;this.maxSubsteps=maxSubsteps;this.acc=0}
@@ -29,15 +33,16 @@ export class JointedPart{
  // `box` is the part's bounding box at rest in the joint's frame ({center,size,quaternion}); it only
  // sizes the generalised mass. `object` (optional) is the Object3D posed by applyPose; its pose when
  // given is the rest pose (q = 0).
- constructor({object=null,kind=HINGE,axis,pivot=new THREE.Vector3(),min=0,max=1,open=max,friction=0,frictionTorque=0,spring=0,damper=0,rest=0,latch=0,maxSpeed=0,mass=2,box=null,activateAt=.9,deactivateAt=.1}={}){
-  Object.assign(this,{object,kind,min,max,open,friction,frictionTorque,spring,damper,rest,latch,maxSpeed,bodyMass:mass,activateAt,deactivateAt});
+ constructor({object=null,kind=HINGE,axis,pivot=new THREE.Vector3(),min=0,max=1,open=max,friction=0,frictionTorque=0,spring=0,damper=0,rest=0,latch=0,maxSpeed=0,mass=2,box=null,activateAt=.9,deactivateAt=.1,locked=false,latchReleaseDelay=.25}={}){
+  Object.assign(this,{object,kind,min,max,open,friction,frictionTorque,spring,damper,rest,latch,maxSpeed,bodyMass:mass,activateAt,deactivateAt,latchReleaseDelay});
   this.axis=new THREE.Vector3().copy(axis).normalize();this.pivot=new THREE.Vector3().copy(pivot);
   this.box=box?{center:box.center.clone(),size:box.size.clone(),quaternion:(box.quaternion??new THREE.Quaternion()).clone()}:{center:this.pivot.clone(),size:new THREE.Vector3(.4,.4,.4),quaternion:new THREE.Quaternion()};
   this.restPosition=object?object.position.clone():new THREE.Vector3();
   this.restQuaternion=object?object.quaternion.clone():new THREE.Quaternion();
-  this.q=0;this.qd=0;this.lo=min;this.hi=max;this.latched=false;this.active=false;this.lastValue=-1;
-  this.holders=0;this.anim=null;this.listeners={};this.canUnlatch=null;
-  this.mass=this.generalizedMass();
+  this.q=0;this.qd=0;this.lo=min;this.hi=max;this.latched=false;this.locked=!!locked;this.active=false;this.lastValue=-1;
+  this.holders=0;this.holdTime=0;this.hitSpeed=0;this.jig=null;this.anim=null;this.listeners={};this.canUnlatch=null;this._drawn=NaN;
+  this.mass=this.generalizedMass();this.reach=this.computeReach();
+  this.refreshLimits();
  }
  on(name,fn){(this.listeners[name]??=new Set()).add(fn);return ()=>this.listeners[name].delete(fn)}
  emit(name,value){for(const fn of this.listeners[name]??[])fn(value)}
@@ -52,16 +57,25 @@ export class JointedPart{
   const d=center.clone().sub(this.pivot),dPerp=d.addScaledVector(this.axis,-d.dot(this.axis));
   return Math.max(1e-4,la.x*la.x*Ix+la.y*la.y*Iy+la.z*la.z*Iz+m*dPerp.lengthSq());
  }
+ // The part's farthest point from the hinge line (metres): how far its free edge travels per radian.
+ computeReach(){
+  if(this.kind===SLIDER)return 0;
+  const {center,size,quaternion}=this.box,c=new THREE.Vector3();let far=0;
+  for(const sx of [-.5,.5])for(const sy of [-.5,.5])for(const sz of [-.5,.5]){
+   c.set(size.x*sx,size.y*sy,size.z*sz).applyQuaternion(quaternion).add(center).sub(this.pivot);
+   far=Math.max(far,c.addScaledVector(this.axis,-c.dot(this.axis)).length());
+  }
+  return far;
+ }
  // Change the joint's settings (the edit panel); the axis, mass and limits are rebuilt.
  configure(opts){
-  for(const k of ['kind','min','max','open','friction','frictionTorque','spring','damper','rest','latch','maxSpeed','activateAt','deactivateAt'])if(opts[k]!==undefined)this[k]=opts[k];
+  for(const k of ['kind','min','max','open','friction','frictionTorque','spring','damper','rest','latch','maxSpeed','activateAt','deactivateAt','latchReleaseDelay'])if(opts[k]!==undefined)this[k]=opts[k];
   if(opts.mass!==undefined)this.bodyMass=opts.mass;
   if(opts.axis)this.axis.copy(opts.axis).normalize();
   if(opts.pivot)this.pivot.copy(opts.pivot);
   if(opts.box)this.box={center:opts.box.center.clone(),size:opts.box.size.clone(),quaternion:(opts.box.quaternion??new THREE.Quaternion()).clone()};
-  this.mass=this.generalizedMass();
-  this.latched=false;this.setLimits(this.min,this.max);
-  this.q=clamp(this.q,this.lo,this.hi);
+  this.mass=this.generalizedMass();this.reach=this.computeReach();
+  this.latched=false;this.q=clamp(this.q,this.min,this.max);this.refreshLimits();this._drawn=NaN;
  }
  get angle(){return this.q}
  // 0..1 across the whole travel.
@@ -75,6 +89,44 @@ export class JointedPart{
  setLimits(lo,hi){this.lo=lo;this.hi=hi}
  // How far past the latch's end stop it is held; a hair, so the part cannot be pushed out.
  get latchHold(){return this.kind===HINGE?.01*DEG:1e-4}
+ // The limits the state implies: pinned where it stands when locked, at the closed stop when latched.
+ refreshLimits(){
+  if(this.locked)this.setLimits(this.q,this.q+this.latchHold);
+  else if(this.latched)this.setLimits(this.min,this.min+this.latchHold);
+  else this.setLimits(this.min,this.max);
+ }
+ unlatch(){
+  if(!this.latched)return false;
+  this.latched=false;this.refreshLimits();this.emit('unlatched');return true;
+ }
+ // Lock (or unlock) the part where it stands: a locked part ignores pushes, grabs and clicks (they only
+ // jiggle it) until unlocked. A latched part stays latched underneath.
+ setLocked(v){
+  v=!!v;if(v===this.locked)return;
+  this.locked=v;
+  if(v){this.qd=0;this.anim=null}
+  this.refreshLimits();this.emit('locked',v);
+ }
+ // The handle rattle of a locked part (Alyx doorLatch): a small decaying spring-back oscillation about
+ // the pinned pose, 1.5 degrees (a hinge) or 5 mm (a slide). Only the drawn pose moves, never `q`.
+ jiggle(){
+  if(this.jig)return false;
+  this.jig={t:0};this.emit('jiggle');return true;
+ }
+ jiggleOffset(){
+  const j=this.jig;if(!j)return 0;
+  return (this.kind===HINGE?JIGGLE_DEG*DEG:JIGGLE_M)*Math.sin(2*Math.PI*JIGGLE_HZ*j.t)*Math.exp(-j.t/JIGGLE_TAU);
+ }
+ // The closing speed above which a part latching at its stop counts as a slam.
+ get slamSpeed(){return this.kind===HINGE?1.5:.5}
+ // Whatever was driving the part (a click animation) lets go of it; a push or a grab does this.
+ interrupt(){this.anim=null}
+ // Settling time (s) of a click animation for this part: a car door takes about 0.9 s, a cabinet door 0.6,
+ // a drawer 0.45; sized by how far the free edge travels and a little by the mass.
+ responseFor(target){
+  const d=Math.abs(clamp(target,this.min,this.max)-this.q),arc=this.kind===HINGE?this.reach*d:d;
+  return clamp(.15+.55*arc+.02*Math.sqrt(this.bodyMass),.3,1.4);
+ }
 
  // ---------------------------------------------------------------- pose
 
@@ -94,7 +146,10 @@ export class JointedPart{
  // a 90 Hz joint.
  applyPose(dq=0){
   const o=this.object;if(!o)return;
-  const q=dq?clamp(this.q+this.qd*dq,this.lo,this.hi):this.q;
+  let q=dq?clamp(this.q+this.qd*dq,this.lo,this.hi):this.q;
+  if(this.jig)q=clamp(q+this.jiggleOffset(),this.min,this.max);
+  if(q===this._drawn)return;// nothing moved: leave the transform alone so Spark has nothing to redo
+  this._drawn=q;
   if(this.kind===HINGE){
    const rot=this._rot(q);
    o.position.copy(this.restPosition).sub(this.pivot).applyQuaternion(rot).add(this.pivot);
@@ -103,14 +158,14 @@ export class JointedPart{
   o.updateMatrix();o.matrixWorldNeedsUpdate=true;
  }
  // Place the part at a coordinate immediately (scene setup, restoring a saved pose, the scrub slider).
- setPosition(q){this.anim=null;this.q=clamp(q,this.lo,this.hi);this.qd=0;this.applyPose()}
+ setPosition(q){this.anim=null;this.latched=false;this.q=clamp(q,this.min,this.max);this.qd=0;this.refreshLimits();this.applyPose()}
 
  // ---------------------------------------------------------------- impulses and holds
 
  applyImpulse(p){this.qd+=p/this.mass}
  // A hand or the mouse takes hold: whatever was animating the part lets go of it. Two hands can hold one part.
  get held(){return this.holders>0}
- grab(){this.holders++;this.anim=null}
+ grab(){this.holders++;this.anim=null;if(this.locked)this.jiggle()}
  release(){this.holders=Math.max(0,this.holders-1)}
  // A part pushed (not held) goes no faster than `maxSpeed` (m/s along a slide, rad/s about a hinge; 0 = no limit).
  limitSpeed(qd){
@@ -118,13 +173,25 @@ export class JointedPart{
   return clamp(qd,-this.maxSpeed,this.maxSpeed);
  }
  // A critically damped drive to coordinate `q` (click to open/close). `response` is its settling time in
- // seconds. It is the same implicit spring/damper as `preStep`, so it is stable at any step and a new
- // target (or a grab) just takes over from wherever the part is, with whatever speed it has.
- animateTo(q,{response=.5}={}){
-  const target=clamp(q,this.min,this.max);
+ // seconds (default .5; `style:'swing'` sizes it by the part, see responseFor). It is the same implicit
+ // spring/damper as `preStep`, so it is stable at any step and a new target (or a grab, or a push) just
+ // takes over from wherever the part is, with whatever speed it has.
+ // `style:'swing'` also gives the part a shove first: it starts at a fraction (`kick`) of the speed that
+ // would just reach the target, so a door leaves the latch briskly and eases into the end instead of
+ // creeping out of rest. A critically damped spring only overshoots when it starts faster than w*distance,
+ // so the kick (< 1) never does. A locked part only jiggles.
+ animateTo(q,{response,style='drive',kick=.3}={}){
+  const target=clamp(q,this.min,this.max),delta=target-this.q;
+  if(this.locked){this.anim=null;if(Math.abs(delta)>this.tolerance)this.jiggle();return}
   // A latched door would hold itself shut against the drive.
-  if(this.latched&&target>this.q+this.tolerance){this.latched=false;this.setLimits(this.min,this.max);this.emit('unlatched')}
-  this.anim={target,response:Math.max(.05,response),time:0};
+  if(this.latched&&target>this.q+this.tolerance)this.unlatch();
+  const swing=style==='swing';
+  const r=Math.max(.05,response??(swing?this.responseFor(target):.5));
+  this.anim={target,response:r,time:0};
+  if(swing&&Math.abs(delta)>this.tolerance*4){
+   const dir=Math.sign(delta),w=2*Math.PI/r,v=dir*Math.min(kick*w*Math.abs(delta),this.maxSpeed>0?this.maxSpeed:Infinity);
+   if(v*dir>this.qd*dir)this.qd=v;
+  }
  }
  get animating(){return !!this.anim}
  // The controller pulls the grip point a fraction of the way to the hand each step, sized by the
@@ -148,11 +215,19 @@ export class JointedPart{
  // One fixed step: latch, events, then the dynamics and the integration.
  step(dt){this.fixedStep(dt);this.preStep(dt);this.postStep(dt)}
  fixedStep(dt){
+  this.holdTime=this.held?this.holdTime+dt:0;
   // The latch waits while a click animation is still driving the part, so it never snaps the last degrees.
-  if(this.latch>0){
-   if(!this.latched&&!this.held&&!this.anim&&this.q-this.min<this.latch&&Math.abs(this.qd)<1.5){this.latched=true;this.setLimits(this.min,this.min+this.latchHold);this.emit('latched')}
-   else if(this.latched&&this.held&&(!this.canUnlatch||this.canUnlatch())){this.latched=false;this.setLimits(this.min,this.max);this.emit('unlatched')}
+  // A part that arrives fast (a slam) has stopped dead against its end stop by the next step and latches then.
+  if(this.latch>0&&!this.locked){
+   if(!this.latched&&!this.held&&!this.anim&&this.q-this.min<this.latch&&Math.abs(this.qd)<1.5){
+    const hit=this.hitSpeed;this.hitSpeed=0;
+    this.latched=true;this.refreshLimits();this.emit('latched');
+    if(hit>this.slamSpeed)this.emit('slam',hit);
+   }
+   // Only a hand that has hold of the part for a moment (a hand on the handle) lets the latch go. A push never does.
+   else if(this.latched&&this.held&&this.holdTime>=this.latchReleaseDelay&&(!this.canUnlatch||this.canUnlatch()))this.unlatch();
   }
+  if(this.q-this.min>=this.latch)this.hitSpeed=0;
   const v=this.value;
   if(Math.abs(v-this.lastValue)>1e-5){
    this.emit('value',v);
@@ -180,11 +255,14 @@ export class JointedPart{
   if(next<this.lo)qd=(this.lo-this.q)/dt;else if(next>this.hi)qd=(this.hi-this.q)/dt;
   const atEnd=(this.q<=this.lo+1e-6&&qd<=0)||(this.q>=this.hi-1e-6&&qd>=0);
   if(atEnd&&Math.abs(this.qd)>.05)this.emit('limit',Math.abs(this.qd));
+  // How hard it struck the closed stop, for the latch's slam.
+  if(atEnd&&!this.locked&&!this.latched&&this.q<=this.min+1e-6&&this.qd<0)this.hitSpeed=Math.max(this.hitSpeed,-this.qd);
   this.qd=qd;
  }
  postStep(dt){
   // qd was chosen to land inside the limits, so this clamp only catches rounding.
   this.q=clamp(this.q+this.qd*dt,this.lo,this.hi);
+  if(this.jig&&(this.jig.t+=dt)>=JIGGLE_TIME)this.jig=null;
   const a=this.anim;
   if(a){
    a.time+=dt;

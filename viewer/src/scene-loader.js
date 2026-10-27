@@ -10,7 +10,8 @@
 // sit under, so a door swinging through the static room still sorts correctly against it.
 import * as THREE from 'three';
 import {SplatMesh,SplatFileType} from '@sparkjsdev/spark';
-import {plyCentres} from './ply-centres.js';
+import {plyCentres,plyPoints} from './ply-centres.js';
+import {buildContacts} from './contact.js';
 import {fitObb,trimmedBounds} from './obb.js';
 import {JointedPart,HINGE,SLIDER} from './joint.js';
 import {DEG} from './math.js';
@@ -34,7 +35,7 @@ export function jointOptions(j){
  // A slider's latch is in metres; the hinge default of 3 degrees would pin a drawer shut.
  const latch=hinge?(j.latch??DEFAULTS.latchDeg)*DEG:Math.min(j.latch??0,.1*(max-min));
  return {kind:hinge?HINGE:SLIDER,axis:new THREE.Vector3(...(j.axis??[0,1,0])),pivot:new THREE.Vector3(...(j.pivot??[0,0,0])),min,max,open,
-  friction:j.friction??DEFAULTS.friction,frictionTorque:j.frictionTorque??DEFAULTS.frictionTorque,latch,mass:j.mass??DEFAULTS.mass};
+  friction:j.friction??DEFAULTS.friction,frictionTorque:j.frictionTorque??DEFAULTS.frictionTorque,latch,mass:j.mass??DEFAULTS.mass,locked:j.locked===true};
 }
 const round=(v,d=5)=>Math.round(v*10**d)/10**d;
 // A JointedPart back into scene.json terms (for the edit panel's download).
@@ -42,21 +43,51 @@ export function jointToJson(joint,original={}){
  const hinge=joint.kind===HINGE,u=hinge?1/DEG:1;
  return {...original,kind:joint.kind,axis:joint.axis.toArray().map(v=>round(v)),pivot:joint.pivot.toArray().map(v=>round(v)),
   min:round(joint.min*u),max:round(joint.max*u),open:round(joint.open*u),friction:round(joint.friction),frictionTorque:round(joint.frictionTorque),
-  latch:round(joint.latch*u),mass:round(joint.bodyMass)};
+  latch:round(joint.latch*u),mass:round(joint.bodyMass),...(joint.locked||original.locked!==undefined?{locked:joint.locked}:{})};
 }
 
-async function fetchBuffer(url){
+// Download a file with progress: onProgress(received, total) per chunk, total 0 when the server does not say
+// (or compresses, so content-length is not the size of what arrives). The bytes land in one buffer that
+// is sized from content-length when known, so a 150 MB PLY is not held twice.
+async function fetchBuffer(url,onProgress=()=>{}){
  const r=await fetch(url);
  if(!r.ok)throw new Error(`${r.status} ${r.statusText} for ${url}`);
- return r.arrayBuffer();
+ const length=Number(r.headers.get('content-length'))||0,total=r.headers.get('content-encoding')?0:length;
+ if(!r.body?.getReader){const b=await r.arrayBuffer();onProgress(b.byteLength,b.byteLength);return b}
+ const reader=r.body.getReader();
+ let out=new Uint8Array(total||1<<20),received=0;
+ onProgress(0,total);
+ for(;;){
+  const {done,value}=await reader.read();if(done)break;
+  if(received+value.length>out.length){const grown=new Uint8Array(Math.max(out.length*2,received+value.length));grown.set(out.subarray(0,received));out=grown}
+  out.set(value,received);received+=value.length;
+  onProgress(received,total);
+ }
+ onProgress(received,received);
+ return out.length===received?out.buffer:out.buffer.slice(0,received);
+}
+
+// At most `n` PLYs download and decode at once: all of them in parallel is the fastest way to run a phone out
+// of memory when each is 100+ MB. Jobs start in the order they are asked for (the static scene first).
+function createGate(n){
+ let active=0;const waiting=[];
+ const next=()=>{if(active<n&&waiting.length){active++;waiting.shift()()}};
+ return async fn=>{
+  await new Promise(res=>{waiting.push(res);next()});
+  try{return await fn()}finally{active--;next()}
+ };
 }
 
 // Read a PLY's centres, then hand its bytes to Spark. The centres come first: Spark may take ownership of
 // the buffer. If the file is not a plain binary PLY the centres come from Spark's decoded splats instead.
-async function loadSplats(url,{wantCentres,maxSh,max=60000}){
- const buffer=await fetchBuffer(url);
- let centres=null;
- if(wantCentres){try{centres=plyCentres(buffer,{max})}catch(e){console.warn(`${url}: ${e.message}; reading centres through Spark`)}}
+// Nothing here walks the splats per frame; only the (strided) centres are read, once.
+async function loadSplats(url,{wantCentres,wantAttrs=false,maxSh,max=60000,onProgress=()=>{}}){
+ const base={url,name:url.split('/').pop()};
+ onProgress({...base,stage:'download',loaded:0,total:0});
+ const buffer=await fetchBuffer(url,(loaded,total)=>onProgress({...base,stage:'download',loaded,total}));
+ onProgress({...base,stage:'decode',loaded:buffer.byteLength,total:buffer.byteLength});
+ let centres=null,parsed=null;
+ if(wantCentres){try{if(wantAttrs){parsed=plyPoints(buffer,{max});centres=parsed.centres}else centres=plyCentres(buffer,{max})}catch(e){console.warn(`${url}: ${e.message}; reading centres through Spark`)}}
  const mesh=new SplatMesh({fileBytes:buffer,fileType:SplatFileType.PLY,raycastable:false});
  if(maxSh!=null)mesh.maxSh=maxSh;
  await mesh.initialized;
@@ -66,13 +97,15 @@ async function loadSplats(url,{wantCentres,maxSh,max=60000}){
   for(let i=0;i<all.length/3;i+=step)out.push(all[i*3],all[i*3+1],all[i*3+2]);
   centres=new Float32Array(out);
  }
- return {mesh,centres};
+ onProgress({...base,stage:'done',loaded:buffer.byteLength,total:buffer.byteLength});
+ return {mesh,centres,parsed};
 }
-const optional=async(url,opts,what)=>{try{return await loadSplats(url,opts)}catch(e){console.warn(`${what} not loaded: ${e.message}`);return null}};
+const optional=async(url,opts,what)=>{try{return await loadSplats(url,opts)}catch(e){console.warn(`${what} not loaded: ${e.message}`);opts.onProgress?.({url,name:url.split('/').pop(),stage:'failed',loaded:0,total:0});return null}};
 
 const BOX=new THREE.BoxGeometry(1,1,1),EDGES=new THREE.EdgesGeometry(BOX);
 
-export async function loadScene(sceneParam,{onStatus=()=>{},maxSh=null}={}){
+// onProgress({url,name,stage:'download'|'decode'|'done'|'failed',loaded,total}) per file, as bytes arrive.
+export async function loadScene(sceneParam,{onStatus=()=>{},onProgress=()=>{},maxSh=null,concurrency=4}={}){
  const {dir,json,key}=resolveSceneUrl(sceneParam);
  onStatus('Loading scene.json');
  let res;try{res=await fetch(json)}catch(e){throw new Error(`Could not fetch ${json}: ${e.message}`)}
@@ -85,17 +118,18 @@ export async function loadScene(sceneParam,{onStatus=()=>{},maxSh=null}={}){
  root.quaternion.setFromUnitVectors(up,new THREE.Vector3(0,1,0));
  const bounds=new THREE.Box3();let loaded=0,total=1+(data.parts?.length??0);
  const tick=what=>onStatus(`Loaded ${what} (${++loaded}/${total})`);
+ const gate=createGate(concurrency);
 
- // Everything loads in parallel; failures of optional files only warn.
- const staticJob=data.static?loadSplats(file(data.static),{wantCentres:true,maxSh,max:20000}).then(r=>{tick(data.static);return r}):Promise.resolve(null);
+ // Everything loads in parallel (a few files at a time); failures of optional files only warn.
+ const staticJob=data.static?gate(()=>loadSplats(file(data.static),{wantCentres:true,maxSh,max:20000,onProgress})).then(r=>{tick(data.static);return r}):Promise.resolve(null);
  const partJobs=(data.parts??[]).map(async p=>{
   const hasJoint=!!p.joint,f=p.files??{};
   // Without a joint the slot is just its closed state, which is the whole base set.
   const main=hasJoint?(f.part??f.base):(f.base??f.part);
   const [body,reveal,vanish]=await Promise.all([
-   main?optional(file(main),{wantCentres:true,maxSh},`${p.id} ${main}`):null,
-   hasJoint&&f.reveal?optional(file(f.reveal),{maxSh},`${p.id} reveal`):null,
-   hasJoint&&f.vanish?optional(file(f.vanish),{maxSh},`${p.id} vanish`):null,
+   main?gate(()=>optional(file(main),{wantCentres:true,wantAttrs:true,max:100000,maxSh,onProgress},`${p.id} ${main}`)):null,
+   hasJoint&&f.reveal?gate(()=>optional(file(f.reveal),{maxSh,onProgress},`${p.id} reveal`)):null,
+   hasJoint&&f.vanish?gate(()=>optional(file(f.vanish),{maxSh,onProgress},`${p.id} vanish`)):null,
   ]);
   tick(p.name??p.id);
   return {p,body,reveal,vanish};
@@ -111,12 +145,14 @@ export async function loadScene(sceneParam,{onStatus=()=>{},maxSh=null}={}){
  const parts=[];
  for(const {p,body,reveal,vanish} of partRes){
   const group=new THREE.Group();group.name=p.id;root.add(group);
-  const part={id:p.id,name:p.name??p.id,data:p,group,mesh:body?.mesh??null,joint:null,proxy:null,outline:null,reveal:null,vanish:null,fit:p.joint?.fit??null,interactive:false,obb:null};
+  const part={id:p.id,name:p.name??p.id,data:p,group,mesh:body?.mesh??null,joint:null,proxy:null,outline:null,reveal:null,vanish:null,fit:p.joint?.fit??null,interactive:false,obb:null,contacts:null,merged:Array.isArray(p.merged)&&p.merged.length?p.merged:null};
   part.lowFit=part.fit?.inlierRatio!=null&&part.fit.inlierRatio<.6;
   if(body){body.mesh.name=`${p.id}:part`;group.add(body.mesh)}
   for(const [k,r] of [['reveal',reveal],['vanish',vanish]])if(r){r.mesh.name=`${p.id}:${k}`;root.add(r.mesh);part[k]=r.mesh}
   if(body?.centres?.length>=12){
-   const obb=fitObb(body.centres);part.obb=obb;
+   // The contact set (real surface splats) is what hands and the mouse touch; the box built from it is the outline.
+   const contacts=buildContacts(body.parsed??{centres:body.centres});part.contacts=contacts;
+   const obb=contacts.fitBox();part.obb=obb;
    if(obb){
     const proxy=new THREE.Mesh(BOX,new THREE.MeshBasicMaterial({visible:false}));
     proxy.scale.copy(obb.size);proxy.position.copy(obb.center);proxy.quaternion.copy(obb.quaternion);proxy.name=`${p.id}:proxy`;
@@ -130,6 +166,7 @@ export async function loadScene(sceneParam,{onStatus=()=>{},maxSh=null}={}){
   }
   if(p.joint&&body){
    part.joint=new JointedPart({object:group,...jointOptions(p.joint),box:part.obb??undefined});
+   part.joint.contacts=part.contacts??null;
    part.interactive=!!part.proxy;
   }
   parts.push(part);
@@ -138,6 +175,8 @@ export async function loadScene(sceneParam,{onStatus=()=>{},maxSh=null}={}){
  root.updateMatrixWorld(true);
 
  const scene={root,data,dir,key,name:data.name??'scene',staticMesh,parts,bounds,
+  // Optional (spec addendum v1.1): the desktop camera and a point on the ground plane, in export coordinates.
+  view:data.view?.position&&data.view?.target?data.view:null,floor:Array.isArray(data.floor)&&data.floor.length===3?data.floor:null,
   worldBounds:()=>{root.updateMatrixWorld(true);return bounds.clone().applyMatrix4(root.matrixWorld)},
   // The fade of the splats that appear (reveal) or disappear (vanish) as the part opens.
   updateFades(){

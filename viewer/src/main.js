@@ -1,9 +1,9 @@
 // SwitchSplat viewer: renderer, Spark, the fixed-step joint loop, desktop and WebXR input.
 //   ?scene=<url of the export directory>   default scenes/synthetic/
 //   ?edit                                   start in edit mode
-//   ?sh=<0..3>                              cap view-dependent colour (spherical harmonics) degree
+//   ?sh=<0..3>                              cap view-dependent colour (spherical harmonics) degree (sh=1 for a Quest)
 //   ?cam=px,py,pz,tx,ty,tz                  starting camera (world coordinates)
-//   ?xr=none | x,y,z                        where the scene stands in VR (default: in front of you, on the floor)
+//   ?xr=none | x,y,z                        where the scene stands in VR (default: scene.json view/floor, else in front of you)
 //   ?emulate                                dev server only: install the IWER Quest 3 emulator (no headset needed)
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
@@ -15,9 +15,42 @@ import {createXrInput} from './xr-input.js';
 import {createPersistence} from './persist.js';
 import {createEditMode} from './edit-mode.js';
 import {createHud} from './hud.js';
+import {computeSpawn,viewInRootFrame,floorHeight} from './spawn.js';
+import {createLocomotion} from './locomotion.js';
 
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
+
+const mb=n=>`${(n/1048576).toFixed(n<10485760?1:0)} MB`;
+// One row per file being loaded: name, bytes received of total, a bar. Updated at most every 100 ms, so a fast
+// download of a big PLY does not spend the frame budget on the DOM.
+function createLoadList(el){
+ const rows=new Map();let timer=0;
+ const paint=()=>{
+  timer=0;
+  for(const r of rows.values()){
+   const {stage,loaded,total}=r.state,pct=total>0?Math.min(1,loaded/total):stage==='done'?1:0;
+   r.li.className=stage==='download'?'':stage;
+   r.amount.textContent=stage==='failed'?'not loaded':stage==='done'?mb(loaded):stage==='decode'?`${mb(loaded)}, decoding`:total>0?`${mb(loaded)} / ${mb(total)}  ${Math.round(pct*100)}%`:mb(loaded);
+   r.fill.style.width=`${(stage==='decode'||stage==='done'?1:pct)*100}%`;
+  }
+ };
+ return {
+  update(p){
+   let r=rows.get(p.url);
+   if(!r){
+    const li=document.createElement('li'),file=document.createElement('span'),amount=document.createElement('span'),track=document.createElement('div'),fill=document.createElement('div');
+    file.className='file';file.textContent=p.name;amount.className='amount';track.className='track';track.append(fill);li.append(file,amount,track);el.append(li);
+    r={li,amount,fill,state:p};rows.set(p.url,r);
+   }
+   r.state=p;
+   // Stage changes show at once; byte counts are throttled.
+   if(p.stage!=='download'){clearTimeout(timer);paint()}
+   else if(!timer){timer=setTimeout(paint,100)}
+  },
+  clear(){clearTimeout(timer);rows.clear();el.textContent=''},
+ };
+}
 
 async function installEmulator(){
  // Meta's Immersive Web Emulation Runtime: a Quest 3 and its two controllers in a desktop browser.
@@ -31,7 +64,7 @@ async function installEmulator(){
 async function main(){
  if(import.meta.env.DEV&&params.has('emulate'))await installEmulator();
 
- const canvas=$('view'),status=$('status'),loadingText=$('loading-text');
+ const canvas=$('view'),status=$('status'),loadingText=$('loading-text'),loadList=createLoadList($('load-files'));
  const renderer=new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:'high-performance'});
  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
  renderer.setClearColor(0x101114);
@@ -46,7 +79,7 @@ async function main(){
  const sceneParam=params.get('scene')??`${import.meta.env.BASE_URL}scenes/synthetic/`;
  const maxSh=params.has('sh')?Math.min(3,Math.max(0,parseInt(params.get('sh'),10)||0)):null;
  let loaded;
- try{loaded=await loadScene(sceneParam,{onStatus:t=>{loadingText.textContent=t},maxSh})}
+ try{loaded=await loadScene(sceneParam,{onStatus:t=>{loadingText.textContent=t},onProgress:p=>loadList.update(p),maxSh})}
  catch(e){console.error(e);loadingText.textContent=e.message;loadingText.classList.add('error');return}
  world.add(loaded.root);
  $('scene-name').textContent=loaded.name;
@@ -65,7 +98,10 @@ async function main(){
  const controls=new OrbitControls(camera,canvas);
  controls.enableDamping=true;controls.dampingFactor=.12;controls.screenSpacePanning=true;
  const cam=params.get('cam')?.split(',').map(Number);
+ // scene.json `view` (export coordinates, turned by the root's up rotation) is the default camera.
+ const view=viewInRootFrame(loaded.view,loaded.root.quaternion);
  if(cam?.length===6&&cam.every(Number.isFinite)){camera.position.set(cam[0],cam[1],cam[2]);controls.target.set(cam[3],cam[4],cam[5])}
+ else if(view){camera.position.copy(view.position);controls.target.copy(view.target)}
  else{camera.position.copy(centre).add(new THREE.Vector3(.35,.3,1).normalize().multiplyScalar(radius*1.6));controls.target.copy(centre)}
  controls.minDistance=.05;controls.maxDistance=Math.max(20,radius*10);controls.update();
 
@@ -79,7 +115,7 @@ async function main(){
  const editToggle=$('edit-toggle');
  editToggle.addEventListener('change',()=>edit.setEnabled(editToggle.checked));
  if(params.has('edit')){editToggle.checked=true;edit.setEnabled(true)}
- $('reset').addEventListener('click',()=>{for(const j of joints)j.animateTo(j.closedQ)});
+ $('reset').addEventListener('click',()=>{for(const j of joints)j.animateTo(j.closedQ,{style:'swing'})});
 
  // ---- VR ----
  const vrButton=$('enter-vr');let session=null,placed=false;
@@ -88,19 +124,26 @@ async function main(){
   if(spec==='none')return;
   const b=loaded.worldBounds(),size=b.getSize(new THREE.Vector3()),c=b.getCenter(new THREE.Vector3());
   const explicit=spec?.split(',').map(Number);
+  const spawn=computeSpawn({rootQuaternion:loaded.root.quaternion,floor:loaded.floor,view:loaded.view});
   if(explicit?.length===3&&explicit.every(Number.isFinite))world.position.set(...explicit);
+  // A real scene says where the floor is and where to stand: floor at y = 0, you at the view's position, facing its target.
+  else if(spawn){world.position.copy(spawn.position);world.quaternion.copy(spawn.quaternion)}
   // A small scene (a cabinet, a door) stands with its movable parts 0.9 m in front of you and its floor at y = 0;
   // a room puts you in the middle of it.
-  else if(Math.max(size.x,size.z)>5)world.position.set(-c.x,-b.min.y,-c.z);
   else{
-   const pb=new THREE.Box3();for(const p of parts)if(p.proxy)pb.expandByObject(p.proxy);
-   const pc=pb.isEmpty()?c:pb.getCenter(new THREE.Vector3());
-   world.position.set(-pc.x,-b.min.y,-.9-pc.z);
+   if(Math.max(size.x,size.z)>5)world.position.set(-c.x,-b.min.y,-c.z);
+   else{
+    const pb=new THREE.Box3();for(const p of parts)if(p.proxy)pb.expandByObject(p.proxy);
+    const pc=pb.isEmpty()?c:pb.getCenter(new THREE.Vector3());
+    world.position.set(-pc.x,-b.min.y,-.9-pc.z);
+   }
+   // A floor without a view still fixes the height.
+   const fy=floorHeight(loaded.floor,loaded.root.quaternion);if(fy!==null)world.position.y=-fy;
   }
   placed=true;
  };
  renderer.xr.addEventListener('sessionstart',()=>{desktop.update(0);controls.enabled=false;place();vrButton.textContent='Exit VR'});
- renderer.xr.addEventListener('sessionend',()=>{xr.releaseAll();session=null;if(placed)world.position.set(0,0,0);placed=false;controls.enabled=true;vrButton.textContent='Enter VR';resize()});
+ renderer.xr.addEventListener('sessionend',()=>{xr.releaseAll();session=null;if(placed){world.position.set(0,0,0);world.quaternion.identity()}placed=false;controls.enabled=true;vrButton.textContent='Enter VR';resize()});
  const supported=navigator.xr?await navigator.xr.isSessionSupported('immersive-vr').catch(()=>false):false;
  if(supported){vrButton.disabled=false}
  else{vrButton.title=navigator.xr?'Immersive VR is not available on this device':'WebXR needs a secure context: open the HTTPS dev URL on the headset'}
@@ -113,11 +156,15 @@ async function main(){
   }catch(e){console.error(e);status.textContent=`VR: ${e.message}`;session=null}
  });
 
+ // Left stick walks, right stick snap-turns (not while a hand holds a part).
+ const locomotion=createLocomotion({renderer,world,onTurn:()=>xr.noteJump()});
+
  // ---- loop ----
  const stepper=new FixedStepper();let last=performance.now(),hudClock=0;
  renderer.setAnimationLoop(now=>{
   const dt=Math.min(.1,Math.max(0,(now-last)/1000))||1/60;last=now;
   const presenting=renderer.xr.isPresenting;
+  if(presenting)locomotion.update(dt,{blocked:xr.active});
   loaded.root.updateWorldMatrix(true,false);
   if(presenting)xr.update(dt);else desktop.update(dt);
   const left=stepper.run(dt,h=>{desktop.step(h);xr.step(h);for(const j of joints)j.step(h)});
@@ -128,11 +175,11 @@ async function main(){
   renderer.render(scene,camera);
  });
 
- loadingText.textContent='';$('loading').classList.add('done');
+ loadingText.textContent='';loadList.clear();$('loading').classList.add('done');
  status.textContent=`${parts.filter(p=>p.interactive).length} movable part(s)`;
  hud.update();
  // For scripted checks and the browser console.
- window.switchsplat={THREE,renderer,scene,world,camera,controls,spark,loaded,parts,joints,persist,edit,desktop,xr,toggle:id=>toggle(parts.find(p=>p.id===id))};
+ window.switchsplat={THREE,renderer,scene,world,camera,controls,spark,loaded,parts,joints,persist,edit,desktop,xr,locomotion,toggle:id=>toggle(parts.find(p=>p.id===id))};
 }
 
 main().catch(e=>{console.error(e);const t=$('loading-text');if(t){t.textContent=String(e.message??e);t.classList.add('error')}});

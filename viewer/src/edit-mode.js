@@ -41,11 +41,11 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
  }
 
  // GUI model in scene.json units.
- const toState=j=>{const u=j.kind===HINGE?1/DEG:1;return {kind:j.kind,min:j.min*u,max:j.max*u,open:j.open*u,friction:j.friction,frictionTorque:j.frictionTorque,latch:j.latch*u,mass:j.bodyMass,q:j.q*u}};
+ const toState=j=>{const u=j.kind===HINGE?1/DEG:1;return {kind:j.kind,min:j.min*u,max:j.max*u,open:j.open*u,friction:j.friction,frictionTorque:j.frictionTorque,latch:j.latch*u,mass:j.bodyMass,locked:j.locked,q:j.q*u}};
  function push(part,s){
   const j=part.joint,u=s.kind===HINGE?DEG:1;
   j.configure({kind:s.kind,min:s.min*u,max:s.max*u,open:Math.min(Math.max(s.open,s.min),s.max)*u,friction:s.friction,frictionTorque:s.frictionTorque,latch:s.latch*u,mass:s.mass});
-  j.applyPose();
+  j.setLocked(s.locked);j.applyPose();
  }
 
  for(const part of jointed){
@@ -54,7 +54,7 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
   if(part.lowFit){folder.domElement.classList.add('low-fit');folder.title(`${part.name}   LOW FIT ${part.fit.inlierRatio.toFixed(2)}`)}
   const scrub=folder.add(s,'q',s.min,s.max,.1).name('q (scrub)').onChange(v=>{
    // Scrubbing is the author pulling the part by hand: let go of the latch and any animation.
-   j.anim=null;j.latched=false;j.setLimits(j.min,j.max);j.setPosition(v*(j.kind===HINGE?DEG:1));
+   j.setPosition(v*(j.kind===HINGE?DEG:1));
   });
   const ctl={};
   const unitsFor=kind=>kind===HINGE?{step:1,range:[-360,360]}:{step:.005,range:[-5,5]};
@@ -78,6 +78,7 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
   folder.add(s,'frictionTorque',0,50,.1).name('friction torque').onChange(apply);
   ctl.latch=folder.add(s,'latch',0,20,unit.step/2).name('latch (deg / m)').onChange(apply);
   folder.add(s,'mass',.1,200,.1).name('mass (kg)').onChange(apply);
+  ctl.locked=folder.add(s,'locked').name('locked').onChange(apply);
   folder.close();
   rows.set(part,{folder,s,scrub,helper,ctl});
  }
@@ -120,7 +121,7 @@ export function createEditMode({scene,loaded,camera,renderer,controls,onEnabled=
   // Keep the scrub slider following the part while it moves.
   update(){
    if(!state.enabled)return;
-   for(const [p,r] of rows){const u=p.joint.kind===HINGE?1/DEG:1;r.s.q=p.joint.q*u}
+   for(const [p,r] of rows){const u=p.joint.kind===HINGE?1/DEG:1;r.s.q=p.joint.q*u;if(r.s.locked!==p.joint.locked){r.s.locked=p.joint.locked;r.ctl.locked.updateDisplay()}}
    const r=state.selected&&rows.get(state.selected);if(r)r.scrub.updateDisplay();
   },
   exportScene:()=>buildExport(loaded,jointed),

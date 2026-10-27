@@ -40,3 +40,23 @@ export function plyCentres(buffer,{max=Infinity}={}){
  }
  return out.subarray(0,j);
 }
+
+// Centres plus, when the file has them, each splat's opacity (the pre-sigmoid logit) and its largest log-scale, for
+// telling real surface splats from faint or huge stray ones. Same striding as plyCentres. opacity / maxLogScale are
+// null when the file lacks the properties.
+export function plyPoints(buffer,{max=Infinity}={}){
+ const h=readPlyHeader(buffer),dv=new DataView(buffer);
+ const step=Math.max(1,Math.ceil(h.count/max)),n=Math.ceil(h.count/step);
+ const centres=new Float32Array(n*3);
+ const o=h.props,isF=p=>p&&(p.type==='float'||p.type==='float32');
+ const hasOpacity=isF(o.opacity),hasScale=isF(o.scale_0)&&isF(o.scale_1)&&isF(o.scale_2);
+ const opacity=hasOpacity?new Float32Array(n):null,maxLogScale=hasScale?new Float32Array(n):null;
+ let j=0,k=0;
+ for(let i=0;i<h.count;i+=step,k++){
+  const b=h.dataStart+i*h.stride;
+  centres[j++]=dv.getFloat32(b+h.offsets.x,true);centres[j++]=dv.getFloat32(b+h.offsets.y,true);centres[j++]=dv.getFloat32(b+h.offsets.z,true);
+  if(hasOpacity)opacity[k]=dv.getFloat32(b+o.opacity.offset,true);
+  if(hasScale)maxLogScale[k]=Math.max(dv.getFloat32(b+o.scale_0.offset,true),dv.getFloat32(b+o.scale_1.offset,true),dv.getFloat32(b+o.scale_2.offset,true));
+ }
+ return {centres:centres.subarray(0,j),opacity:opacity&&opacity.subarray(0,k),maxLogScale:maxLogScale&&maxLogScale.subarray(0,k)};
+}
