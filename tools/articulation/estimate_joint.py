@@ -10,6 +10,26 @@ on the switched set form ``slotNN_part.ply`` (stored in the base pose), the unma
 ``slotNN_vanish.ply`` and the unmatched switched ones ``slotNN_reveal.ply``. ``scene.json`` gets the
 joint (other fields are preserved).
 
+Soft part, fused door: the joint is fitted on the confident base / switched gaussians only (the rows flagged
+``base_fit`` / ``switched_fit`` in ``slotNN_membership.npz`` when the importer wrote soft sets, otherwise every
+row), but the part is built from every candidate: all registered base gaussians (the stray-removal trim only
+drops isolated floaters and sparse wisps; a sparse flank of a hood is no floater), plus the open-pose door.
+Mapped back into the closed pose by the inverse joint transform (``fuse.py``: positions, orientations and the
+view-dependent colour are rotated with it) the switched gaussians that lie within ``--fuse-reach`` median spacings
+(and the part's thickness) of the part are a second, independent sample of the same rigid body, which the
+non-moving reveal set used to hold: a ghost door fading in at the open pose while the real one swings. Those that
+repeat a closed-pose gaussian (within ``--fuse-dup`` spacings, similar colour and size) are dropped, the rest are
+
+* ``near`` (the same surface and colour as the closed part): always added to the part;
+* ``inner`` (the inner face, the edge, the window frame; invisible when closed unless the skin is translucent),
+  by ``--inner``: ``part`` adds them to the part too (``auto`` does so for an opaque part, whose median opacity is
+  at least 0.75), ``reveal`` leaves them waiting at the open pose (the old behaviour), ``attach`` writes
+  ``slotNN_partReveal.ply`` (closed-pose coordinates, ``files.partReveal``) for a viewer that moves it with the
+  part and fades it in with q: closed look untouched, no ghost, the whole door open.
+
+What does not belong to the door stays reveal (open-pose only, fades in) and vanish (closed-pose only, fades
+out). ``--no-fuse`` gives the old behaviour (switched gaussians never join the part).
+
 Uses numpy and scipy only. Run as ``python -m tools.articulation.estimate_joint <dir>``.
 """
 
@@ -25,6 +45,8 @@ from scipy.optimize import minimize
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
+from .export_parts import membership_path
+from .fuse import fuse_open_pose
 from .geometry import apply, hinge_transform, rodrigues, rotation_to_axis_angle
 from .ply_io import Splats, read_ply, write_ply
 
@@ -45,13 +67,18 @@ MERGE_AXIS_DEG = 8.0  # parts whose axes differ by less than this (same sign) ma
 MERGE_LINE_DIST = 0.08  # ... and whose hinge lines pass this close to each other near the part (metres)
 MERGE_DEDUP = 0.005  # gaussians of the second slot closer than this to one of the first are dropped (metres)
 MERGE_MIN_OVERLAP = 0.2  # the closed poses must overlap: fraction of the smaller base set near the other
-TRIM_CORE_SPACINGS = 4.0  # body trim: a gaussian needs TRIM_MIN_DEGREE neighbours within this many median spacings
+TRIM_CORE_SPACINGS = 8.0  # body trim: a gaussian needs TRIM_MIN_DEGREE neighbours within this many median spacings
 TRIM_MIN_DEGREE = 2
 TRIM_LINK_SPACINGS = 10.0  # ... and the body is what links up within this many spacings (panel lines of a sparse part)
-TRIM_MAD_K = 3.0  # ... and lie within median +- k x 1.4826 MAD along the body's principal axes
+TRIM_MAD_K = 12.0  # ... and lie within median +- k x 1.4826 MAD along the body's principal axes (a far-out guard only)
 TRIM_SOLID_ALPHA = 0.1  # gaussians fainter than this (or half the part's median) do not define the body
 TRIM_SOLID_SCALE = 4.0  # ... nor those whose footprint exceeds this multiple of the median
-TRIM_KEEP_FRACTION = 0.3  # a further component joins the body when it carries this share of the main one's weight
+TRIM_KEEP_FRACTION = 0.05  # a further component joins the body when it carries this share of the main one's weight
+INNER_MODES = ("auto", "part", "reveal", "attach")
+OPAQUE_ALPHA = 0.75  # parts whose median opacity is at least this hide what is behind their skin ("auto" inner mode)
+FUSE_REACH_SPACINGS = 10.0  # open-pose gaussians this close (median spacings) to the closed part belong to the door
+FUSE_DUP_SPACINGS = 1.5  # ... and are dropped when a similar closed-pose gaussian is this close (the median nearest-neighbour
+#                          distance is about half the mean point spacing, so 0.5 would only catch ~15 % of a second sample)
 CLUSTER_LINK_SPACINGS = 5.0  # base points closer than this many median spacings belong to one cluster
 
 
@@ -477,7 +504,8 @@ def _components(points: np.ndarray, radius: float) -> np.ndarray:
 
 def trim_body(base: Splats, candidate: np.ndarray, link_factor: float = TRIM_LINK_SPACINGS,
               core_factor: float = TRIM_CORE_SPACINGS,
-              min_degree: int = TRIM_MIN_DEGREE, mad_k: float = TRIM_MAD_K) -> np.ndarray:
+              min_degree: int = TRIM_MIN_DEGREE, mad_k: float = TRIM_MAD_K,
+              weights: np.ndarray | None = None) -> np.ndarray:
     """Mask (over ``base``) of the coherent body of the part among the ``candidate`` registered gaussians.
 
     Registered gaussians of a real part still include floaters and bits of neighbouring panels that happen to
@@ -495,6 +523,9 @@ def trim_body(base: Splats, candidate: np.ndarray, link_factor: float = TRIM_LIN
     4. a robust extent clamp along the body's principal axes (median +- ``mad_k`` x 1.4826 MAD) drops what is
        still far out;
     5. non-solid gaussians (faint or large) are kept only when they lie within the link radius of that body.
+
+    ``weights`` [len(base)] are the opacity multipliers of soft members (see ``export_parts``): a soft member is
+    faint because it only carries part of a gaussian, so its solidity is judged on opacity / weight.
     """
     keep = np.zeros(len(base), dtype=bool)
     idx = np.flatnonzero(candidate)
@@ -503,6 +534,7 @@ def trim_body(base: Splats, candidate: np.ndarray, link_factor: float = TRIM_LIN
         return keep
     pts = base.positions[idx].astype(np.float64)
     alpha = 1.0 / (1.0 + np.exp(-base.opacity[idx, 0].astype(np.float64)))
+    full = alpha if weights is None else np.minimum(alpha / np.maximum(np.asarray(weights)[idx], 1.0e-3), 1.0)
     size = np.exp(base.scale[idx]).mean(axis=1).astype(np.float64)
     spacing = median_spacing(pts)
     radius, core_radius = link_factor * spacing, core_factor * spacing
@@ -510,8 +542,8 @@ def trim_body(base: Splats, candidate: np.ndarray, link_factor: float = TRIM_LIN
         keep[idx] = True
         return keep
 
-    min_alpha = min(TRIM_SOLID_ALPHA, 0.5 * float(np.median(alpha)))
-    solid = (alpha >= min_alpha) & (size <= TRIM_SOLID_SCALE * float(np.median(size)))
+    min_alpha = min(TRIM_SOLID_ALPHA, 0.5 * float(np.median(full)))
+    solid = (full >= min_alpha) & (size <= TRIM_SOLID_SCALE * float(np.median(size)))
     if solid.sum() < 4 * min_degree + 4:
         solid[:] = True
     body = solid.copy()
@@ -529,7 +561,7 @@ def trim_body(base: Splats, candidate: np.ndarray, link_factor: float = TRIM_LIN
 
     sub = np.flatnonzero(body)
     labels = _components(pts[sub], radius)
-    weight = np.bincount(labels, weights=alpha[sub])
+    weight = np.bincount(labels, weights=full[sub])
     good = weight >= TRIM_KEEP_FRACTION * weight.max()
     body[sub[~good[labels]]] = False
 
@@ -617,7 +649,7 @@ def union_splats(first: Splats | None, second: Splats | None, tol: float = MERGE
     return Splats.concat([first, second.subset(dedupe_against(second, first, tol))])
 
 
-PART_FILE_KEYS = ("base", "switched", "part", "reveal", "vanish")
+PART_FILE_KEYS = ("base", "switched", "part", "reveal", "vanish", "partReveal")
 
 
 def merge_two(a: dict, b: dict, scene_dir: Path) -> None:
@@ -644,7 +676,10 @@ def merge_two(a: dict, b: dict, scene_dir: Path) -> None:
     for key, splats in merged.items():
         name = a["files"].get(key) or f"{a['id']}_{key}.ply"
         if splats is None:
-            a["files"][key] = None
+            if key == "partReveal":
+                a["files"].pop(key, None)
+            else:
+                a["files"][key] = None
             (scene_dir / name).unlink(missing_ok=True)
         else:
             write_ply(scene_dir / name, splats)
@@ -652,6 +687,8 @@ def merge_two(a: dict, b: dict, scene_dir: Path) -> None:
     for key in PART_FILE_KEYS:
         if b["files"].get(key) and b["files"][key] != a["files"].get(key):
             (scene_dir / b["files"][key]).unlink(missing_ok=True)
+    for part in (a, b):  # the union replaces a's base / switched: the row flags of the soft export no longer line up
+        membership_path(scene_dir, part["id"]).unlink(missing_ok=True)
     a["joint"] = joint
     a["merged"] = list(a.get("merged", [])) + [b["id"]] + list(b.get("merged", []))
 
@@ -706,29 +743,77 @@ def _round(values, digits: int = 5) -> list[float]:
     return [round(float(v), digits) for v in values]
 
 
+def load_membership(scene_dir: Path, slot_id: str, n_base: int, n_switched: int) -> dict | None:
+    """The soft-export sidecar of a slot (row flags / multipliers), or None when absent or out of step with the PLYs."""
+    path = membership_path(scene_dir, slot_id)
+    if not path.exists():
+        return None
+    with np.load(path) as data:
+        member = {key: data[key] for key in data.files}
+    if len(member.get("base_fit", ())) != n_base or len(member.get("switched_fit", ())) != n_switched:
+        return None
+    return member
+
+
 def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: int = 0, up=None,
-                 trim: bool = True) -> str:
+                 trim: bool = True, fuse: bool = True, fuse_reach: float = FUSE_REACH_SPACINGS,
+                 fuse_dup: float = FUSE_DUP_SPACINGS, fuse_sh: bool = True, inner: str = "auto") -> str:
     """Estimate one part, write its PLYs and update ``part`` in place. Returns a summary line."""
     files = part["files"]
     base = read_ply(scene_dir / files["base"])
     switched = read_ply(scene_dir / files["switched"])
-    fit = fit_part(base, switched, seed, up)
+    slot = part["id"]
+    member = load_membership(scene_dir, slot, len(base), len(switched))
+    fit_b = member["base_fit"].astype(bool) if member else np.ones(len(base), dtype=bool)
+    fit_s = member["switched_fit"].astype(bool) if member else np.ones(len(switched), dtype=bool)
+    weights = member["base_mult"] if member else None
+
+    # the joint comes from the confident gaussians only; the part is built from all candidates
+    base_fit, switched_fit = base.subset(fit_b), switched.subset(fit_s)
+    fit = fit_part(base_fit, switched_fit, seed, up)
+    if inlier_dist is None:
+        inlier_dist = 2.5 * max(median_spacing(base_fit.positions), median_spacing(switched_fit.positions))
     split = split_inliers(base, switched, fit.rot, fit.trans, inlier_dist)
     part_mask, reveal_mask = clean_split(split)
     registered = int(part_mask.sum())
-    if trim:  # floaters and stray panels that registered by chance leave the part and fade out as it opens
-        part_mask = trim_body(base, part_mask)
+    if trim:  # floaters that registered by chance leave the part and fade out as it opens
+        part_mask = trim_body(base, part_mask, weights=weights)
+    reported = split if member is None else split_inliers(base_fit, switched_fit, fit.rot, fit.trans, inlier_dist)
 
-    slot = part["id"]
+    if inner not in INNER_MODES:
+        raise ValueError(f"inner must be one of {INNER_MODES}, got {inner!r}")
+    part_base = base.subset(part_mask)
+    near = inner_splats = Splats.empty(part_base.f_rest.shape[1])
+    envelope = np.zeros(len(switched), dtype=bool)
+    if fuse and len(part_base) > 3:
+        fusion = fuse_open_pose(part_base, switched, fit.rot, fit.trans, median_spacing(part_base.positions),
+                                reach=fuse_reach, dup=fuse_dup, sh=fuse_sh)
+        near, inner_splats, envelope = fusion.near, fusion.inner, fusion.envelope
+        if inner == "auto":  # an opaque skin hides the inner face when closed; a translucent one (hood, glass) does not
+            alpha = 1.0 / (1.0 + np.exp(-base.opacity[:, 0].astype(np.float64)))  # of the whole closed sample
+            alpha = alpha if weights is None else alpha / np.maximum(np.asarray(weights), 1.0e-3)
+            inner = "part" if float(np.median(alpha)) >= OPAQUE_ALPHA else "reveal"
+        reveal_mask = ~envelope  # what is not the door is revealed when it opens
+        if inner == "reveal":  # the door's inner face waits at the open pose until the viewer can carry it
+            reveal_mask[fusion.inner_index] = True
+        if int(reveal_mask.sum()) < max(MIN_SET, 0.01 * len(reveal_mask)):
+            reveal_mask[:] = False
+    attached = inner_splats if inner == "attach" and len(inner_splats) else None
+    body = [part_base, near] + ([inner_splats] if inner == "part" else [])
+
     outputs = {
-        "part": base.subset(part_mask),
+        "part": Splats.concat([s for s in body if len(s)]),
         "vanish": base.subset(~part_mask) if (~part_mask).any() else None,
         "reveal": switched.subset(reveal_mask) if reveal_mask.any() else None,
+        "partReveal": attached,
     }
     for key, splats in outputs.items():
         name = f"{slot}_{key}.ply"
         if splats is None:
-            files[key] = None
+            if key == "partReveal":
+                files.pop(key, None)  # optional file: only present when the part carries open-only content
+            else:
+                files[key] = None
             (scene_dir / name).unlink(missing_ok=True)
         else:
             write_ply(scene_dir / name, splats)
@@ -746,14 +831,22 @@ def process_part(scene_dir: Path, part: dict, inlier_dist: float | None, seed: i
         "max": round(fit.open, 4),
         "open": round(fit.open, 4),
         **joint_defaults(fit.kind, base.positions),
-        "fit": {"rmse": round(split.rmse, 5), "inlierRatio": round(split.inlier_ratio, 4), "screw": round(fit.screw, 5)},
+        "fit": {"rmse": round(reported.rmse, 5), "inlierRatio": round(reported.inlier_ratio, 4),
+                "screw": round(fit.screw, 5)},
     }
     part["joint"] = joint
+    part["stats"] = {
+        "base": len(base), "baseConfident": int(fit_b.sum()), "switched": len(switched),
+        "registered": registered, "part": len(part_base), "fused": len(near) + (len(inner_splats) if inner == "part" else 0),
+        "inner": len(inner_splats), "innerMode": inner,
+        "doorEnvelope": int(envelope.sum()), "reveal": int(reveal_mask.sum()), "vanish": int((~part_mask).sum()),
+    }
     unit = "deg" if fit.kind == "hinge" else "m"
     return (
         f"{slot} ({part.get('name', '')}): {fit.kind} axis={joint['axis']} pivot={joint['pivot']} "
-        f"open={joint['open']}{unit} rmse={split.rmse * 1000:.1f}mm inliers={split.inlier_ratio:.2f} "
-        f"part={int(part_mask.sum())} (trimmed {registered - int(part_mask.sum())}) vanish={int((~part_mask).sum())} reveal={int(reveal_mask.sum())}"
+        f"open={joint['open']}{unit} rmse={reported.rmse * 1000:.1f}mm inliers={reported.inlier_ratio:.2f} "
+        f"base={len(base)} registered={registered} part={len(part_base)} (trimmed {registered - len(part_base)}) "
+        f"fused={len(near)} inner={len(inner_splats)} ({inner}) vanish={int((~part_mask).sum())} reveal={int(reveal_mask.sum())}"
     )
 
 
@@ -767,6 +860,23 @@ def main(argv: list[str] | None = None) -> None:
                         help="trim each part to its coherent body, the rest fades out as vanish (default on)")
     parser.add_argument("--merge", action=argparse.BooleanOptionalAction, default=True,
                         help="merge slots that turn out to be the same hinge / slider of the same part (default on)")
+    parser.add_argument("--fuse", action=argparse.BooleanOptionalAction, default=True,
+                        help="add the open-pose door (switched gaussians mapped back to the closed pose) to the part "
+                             "(default on)")
+    parser.add_argument("--fuse-reach", type=float, default=FUSE_REACH_SPACINGS,
+                        help="switched gaussians within this many median spacings of the closed part belong to the "
+                             "door (default %(default)s, about the door thickness)")
+    parser.add_argument("--fuse-dup", type=float, default=FUSE_DUP_SPACINGS,
+                        help="fused gaussians this many spacings from a similar closed-pose gaussian are duplicates "
+                             "(default %(default)s)")
+    parser.add_argument("--inner", choices=INNER_MODES, default="auto",
+                        help="where the door's open-pose-only content (inner face, edge, window frame) goes: 'part' = "
+                             "into the moving part (always drawn: fine behind an opaque skin, shows through a translucent "
+                             "one), 'reveal' = waits at the open pose and fades in (ghosts while the part moves), "
+                             "'attach' = slotNN_partReveal.ply, moves with the part and fades in with it (files.partReveal; "
+                             "needs viewer support), 'auto' (default) = 'part' for opaque parts, 'reveal' for translucent ones")
+    parser.add_argument("--fuse-sh", action=argparse.BooleanOptionalAction, default=True,
+                        help="rotate the view-dependent colour of fused gaussians (off: they keep only the DC colour)")
     args = parser.parse_args(argv)
     inlier = None if args.inlier_dist == "auto" else float(args.inlier_dist)
 
@@ -777,7 +887,9 @@ def main(argv: list[str] | None = None) -> None:
     for part in scene["parts"]:
         if wanted is not None and part["id"] not in wanted:
             continue
-        print(process_part(args.scene_dir, part, inlier, args.seed, scene.get("up"), args.trim),
+        print(process_part(args.scene_dir, part, inlier, args.seed, scene.get("up"), args.trim,
+                           fuse=args.fuse, fuse_reach=args.fuse_reach, fuse_dup=args.fuse_dup, fuse_sh=args.fuse_sh,
+                           inner=args.inner),
               flush=True)
         done.add(part["id"])
     if args.merge:

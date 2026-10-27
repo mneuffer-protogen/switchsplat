@@ -22,8 +22,10 @@ The hosted SwitchSplat viewer streams every scene as a ``.gutb`` file (optionall
                viewer shows a gaussian with alpha = opacity * (sum of the enabled states' probabilities).
 
 The decoded gaussians are converted to the PLY convention of ``ply_io`` (logit opacity, log scale, wxyz,
-channel-major f_rest), split by state with ``export_parts.split_by_state`` and written like
-``export_parts.py`` does; the manifest entry of the hosted viewer (``index.js``) supplies part names, ``up``
+channel-major f_rest), split by state and written like ``export_parts.py`` does. By default the split is soft
+(``--soft-threshold 0.1``, see ``export_parts``): a gaussian with real probability mass in several states is
+written to each of those files with its opacity scaled by that mass, which reproduces the viewer's
+alpha = opacity x sum(enabled state probabilities) instead of dropping everything below --min-confidence; the manifest entry of the hosted viewer (``index.js``) supplies part names, ``up``
 and the initial view, and the floor is estimated from the static gaussians around the parts.
 
 Run:  python -m tools.articulation.import_gutb scene.gutb.gz --out DIR [--manifest-js index.js --scene-id best-car]
@@ -451,11 +453,12 @@ def demote_ground(logits: np.ndarray, positions: np.ndarray, slot_mask: np.ndarr
 def import_gutb(path: Path, out: Path, *, manifest_js: Path | None = None, scene_id: str | None = None,
                 min_confidence: float = 0.6, sh_degree: int | None = None, name: str | None = None,
                 up=None, ground_margin: float | None = None, metres_per_unit: float | None = None,
-                verbose: bool = True) -> dict:
+                soft_threshold: float = 0.1, verbose: bool = True) -> dict:
     """Decode, split by state, write the export directory and return the scene.json dictionary.
 
     ``ground_margin`` (same units as the scene; default: 1.25 x the ground layer's thickness, at least 3 % of the
     parts' height span) is the height above the estimated floor under which part gaussians count as ground.
+    ``soft_threshold`` > 0 selects the soft membership of ``export_parts`` (0 = hard argmax sets).
     """
     gutb = read_gutb(path)
     if gutb.switches is None:
@@ -484,6 +487,8 @@ def import_gutb(path: Path, out: Path, *, manifest_js: Path | None = None, scene
         part_h = splats.positions[slot_mask].astype(np.float64) @ np.asarray(up)
         span = float(np.percentile(part_h, 99) - np.percentile(part_h, 1))
         margin = ground_margin if ground_margin is not None else max(1.25 * thickness, 0.03 * span)
+        if soft_threshold > 0:  # soft candidates (any slot state with real mass) leak onto the ground too
+            slot_mask = slot_mask | (gutb.switches[:, 1:] >= min(soft_threshold, min_confidence)).any(axis=1)
         logits, demoted = demote_ground(logits, splats.positions, slot_mask, floor, up, margin)
         if verbose:
             print(f"floor point {np.round(floor, 4).tolist()} (up {np.round(up, 4).tolist()}), ground thickness "
@@ -492,7 +497,7 @@ def import_gutb(path: Path, out: Path, *, manifest_js: Path | None = None, scene
         print("warning: could not estimate a floor", flush=True)
 
     scene = export_parts.export_parts(splats, logits, out, min_confidence=min_confidence, up=up, names=names,
-                                      name=scene_name)
+                                      name=scene_name, soft_threshold=soft_threshold)
     # view and floor (spec addendum v1.1)
     if isinstance(camera.get("position"), list) and isinstance(camera.get("target"), list):
         scene["view"] = {"position": [round(float(x), 5) for x in camera["position"]],
@@ -516,6 +521,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--scene-id", help="scene id inside the manifest, e.g. best-car")
     parser.add_argument("--min-confidence", type=float, default=0.6,
                         help="drop slot gaussians whose top state probability is lower (default 0.6)")
+    parser.add_argument("--soft-threshold", type=float, default=0.1,
+                        help="soft membership: write a gaussian to every state file where its probability is at least "
+                             "this, opacity scaled by that mass (default 0.1; 0 = hard argmax sets)")
     parser.add_argument("--sh-degree", type=int, default=None,
                         help="keep SH up to this degree (default: all stored, usually 3)")
     parser.add_argument("--name", help="scene name (default: the manifest name)")
@@ -529,7 +537,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--manifest-js and --scene-id go together")
     scene = import_gutb(args.gutb, args.out, manifest_js=args.manifest_js, scene_id=args.scene_id,
                         min_confidence=args.min_confidence, sh_degree=args.sh_degree, name=args.name,
-                        up=args.up, ground_margin=args.ground_margin, metres_per_unit=args.metres_per_unit)
+                        up=args.up, ground_margin=args.ground_margin, metres_per_unit=args.metres_per_unit,
+                        soft_threshold=args.soft_threshold)
     print(f"wrote {args.out} with {len(scene['parts'])} parts", flush=True)
 
 
